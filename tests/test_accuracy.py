@@ -119,7 +119,7 @@ class TestUngroundedClaims:
         assert any("実績表現" in p for p in problems)
 
     def test_no_source_means_no_claim_check(self):
-        assert write.review_pitch("最強です。", 250, allow_deal_info=True) == []
+        assert write.review_pitch("最強です😊✨", 250, allow_deal_info=True) == []
 
 
 class TestUnverifiableDealMasking:
@@ -146,3 +146,27 @@ class TestUnverifiableDealMasking:
     def test_review_flags_it(self):
         problems = write.review_pitch("マラソン限定でさらにお得です。", 250, allow_deal_info=False)
         assert any("割引" in p or "金額" in p for p in problems)
+
+
+class TestRankingClaims:
+    """「ランキング1位」「受賞」も裏づけを確認する。
+
+    「第◯位」しか見ていなかったため、「楽天ランキング1位」が
+    検証をすり抜けていた。
+    """
+
+    def test_grounded_ranking_passes(self):
+        source = "＼楽天 総合ランキング1位／（楽天で販売されている2億商品以上）"
+        assert write.ungrounded_claims("楽天ランキング1位の真空保存容器✨", source) == []
+
+    def test_invented_ranking_is_flagged(self):
+        source = "耐衝撃 強化ガラス クリアケース"
+        assert write.ungrounded_claims("ランキング1位の実力です✨", source)
+
+    def test_invented_award_is_flagged(self):
+        source = "キッズカメラ ミニピク"
+        assert write.ungrounded_claims("グッドデザイン受賞のカメラ😊", source)
+
+    def test_grounded_award_passes(self):
+        source = "【公式】MiNiPiC®【No.1受賞】レビュー9000件突破"
+        assert write.ungrounded_claims("No.1受賞のキッズカメラ😊✨", source) == []

@@ -138,7 +138,7 @@ class TestBuildPrompt:
 
 class TestReviewPitch:
     def test_clean_text_passes(self):
-        text = "毎朝のお米を研ぐ手間がもう不要。\n\n無洗米だから朝が楽になります。\n#無洗米"
+        text = "毎朝のお米を研ぐ手間がもう不要😊\n\n無洗米だから朝が楽になります✨\n#無洗米"
         assert write.review_pitch(text, 200) == []
 
     def test_flags_price(self):
@@ -154,11 +154,11 @@ class TestReviewPitch:
         assert any("1行目" in p for p in problems)
 
     def test_accepts_first_line_ending_in_a_full_stop(self):
-        assert write.review_pitch("毎日の洗濯に信頼を。\n続きます。", 200) == []
+        assert write.review_pitch("毎日の洗濯に信頼を。\n続きます😊✨", 200) == []
 
     def test_accepts_question_and_exclamation(self):
-        assert write.review_pitch("油汚れで困っていませんか？\n本文。", 200) == []
-        assert write.review_pitch("これは便利！\n本文。", 200) == []
+        assert write.review_pitch("油汚れで困っていませんか？\n本文です😊✨", 200) == []
+        assert write.review_pitch("これは便利！\n本文です😊✨", 200) == []
 
     def test_flags_first_line_too_long_for_the_feed(self):
         long_line = "あ" * 60 + "。"
@@ -170,17 +170,18 @@ class TestReviewPitch:
         assert any("1行目にレビュー件数" in p for p in problems)
 
     def test_allows_review_metrics_later(self):
-        text = "毎日の洗濯を楽にしたい人へ。\n4000件超のレビューが実力を物語ります。"
+        text = "毎日の洗濯を楽にしたい人へ😊\n4000件超のレビューが実力を物語ります✨"
         assert write.review_pitch(text, 200) == []
 
     def test_reports_several_problems_at_once(self):
         problems = write.review_pitch("1,980円だから、\n" + "あ" * 250, 200)
-        assert len(problems) == 3
+        # 金額・字数・1行目の途中切れ・絵文字なし
+        assert len(problems) == 4
 
 
 class TestGenerate:
     def test_accepts_clean_output_without_retry(self, monkeypatch):
-        client = FakeClient(["毎日のごはんを楽にしたい人へ。無洗米は洗う手間が消えます🍚"])
+        client = FakeClient(["毎日のごはんを楽にしたい人へ😊 無洗米は洗う手間が消えます🍚"])
         monkeypatch.setattr(write, "_client", lambda: client)
         items = [make_item()]
         write.generate(items, SETTINGS)
@@ -202,14 +203,14 @@ class TestGenerate:
         assert client.calls[1][1]["role"] == "assistant"
 
     def test_retries_when_too_long(self, monkeypatch):
-        client = FakeClient(["あ" * 260 + "。", "短く直しました。"])
+        client = FakeClient(["あ" * 260 + "。", "短く直しました😊✨"])
         monkeypatch.setattr(write, "_client", lambda: client)
         items = [make_item()]
         write.generate(items, SETTINGS)
-        assert items[0]["_pitch"] == "短く直しました。"
+        assert items[0]["_pitch"] == "短く直しました😊✨"
 
     def test_retries_when_first_line_is_cut(self, monkeypatch):
-        client = FakeClient(["毎日の洗濯だからこそ、\n信頼を。", "毎日の洗濯に信頼を。\n本文。"])
+        client = FakeClient(["毎日の洗濯だからこそ、\n信頼を。", "毎日の洗濯に信頼を。\n本文です😊✨"])
         monkeypatch.setattr(write, "_client", lambda: client)
         items = [make_item()]
         write.generate(items, SETTINGS)
@@ -229,8 +230,8 @@ class TestGenerate:
         全か無かにすると、惜しいところまで直った文を捨てて
         元の悪い文へ戻ってしまう。
         """
-        bad = "1,980円だから、\n" + "あ" * 250  # 金額 + 字数 + 1行目途中切れ
-        better = "毎日を楽にしたい人へ。\n" + "あ" * 250  # 字数超過だけ残る
+        bad = "1,980円だから、\n" + "あ" * 250  # 金額 + 字数 + 1行目途中切れ + 絵文字なし
+        better = "毎日を楽にしたい人へ😊\n" + "あ" * 250 + "✨"  # 字数超過だけ残る
         client = FakeClient([bad, better])
         monkeypatch.setattr(write, "_client", lambda: client)
         items = [make_item()]
@@ -366,9 +367,55 @@ class TestDealInfo:
         assert "でっち上げてはいけない" in allowed
 
     def test_generate_accepts_a_coupon_hook(self, monkeypatch):
-        client = FakeClient(["クーポンありでお得に試せます。\n本文。"])
+        client = FakeClient(["クーポンありでお得に試せます😊\n本文です✨"])
         monkeypatch.setattr(write, "_client", lambda: client)
         items = [make_item()]
         write.generate(items, DEAL_SETTINGS)
         assert items[0]["_pitch"].startswith("クーポンあり")
         assert len(client.calls) == 1  # 書き直しが走らない
+
+
+class TestEmojiDecoration:
+    """ROOMのフィードでは装飾のない説明文は読み飛ばされる。
+
+    禁止事項を積み増した結果、生成文から絵文字が完全に消えた回帰があった。
+    """
+
+    def test_counts_emoji_and_symbols(self):
+        assert write.count_emoji("便利です😊 おすすめ✨") == 2
+        assert write.count_emoji("味も◎ 見た目も♡") == 2
+        assert write.count_emoji("絵文字なしの説明文です。") == 0
+
+    def test_flags_plain_text(self):
+        text = "毎日の洗濯を楽にしたい人へ。\n信頼できる定番です。"
+        problems = write.review_pitch(text, 250)
+        assert any("絵文字が0個" in p for p in problems)
+
+    def test_accepts_moderate_decoration(self):
+        text = "毎日の洗濯を楽にしたい人へ😊\n信頼できる定番です✨"
+        assert write.review_pitch(text, 250) == []
+
+    def test_flags_too_many(self):
+        text = "楽になります" + "😊" * 12
+        problems = write.review_pitch(text, 250)
+        assert any("多すぎる" in p for p in problems)
+
+    def test_retries_when_decoration_is_missing(self, monkeypatch):
+        client = FakeClient(
+            ["毎日の洗濯を楽にしたい人へ。定番です。", "毎日の洗濯を楽にしたい人へ😊\n定番です✨"]
+        )
+        monkeypatch.setattr(write, "_client", lambda: client)
+        items = [make_item()]
+        write.generate(items, SETTINGS)
+        assert write.count_emoji(items[0]["_pitch"]) >= write.MIN_EMOJI
+
+
+class TestStylePrompt:
+    def test_shows_concrete_room_examples(self):
+        system = write.SYSTEM_PROMPT.format(
+            max_chars=250, deal_rule=write.DEAL_RULE_STRICT
+        )
+        assert "文体" in system
+        assert "絵文字を2〜5個使う" in system
+        # 装飾を誇張の道具にさせない一文が残っていること
+        assert "装飾は温度であって内容ではありません" in system
