@@ -16,6 +16,46 @@ CONFIG_DIR = ROOT / "config"
 DATA_DIR = ROOT / "data"
 DOCS_DIR = ROOT / "docs"
 LOCAL_DIR = ROOT / "local"
+DOTENV_PATH = ROOT / ".env"
+
+
+def load_dotenv(path: Path | None = None) -> list[str]:
+    """.env があれば環境変数に流し込む。読み込んだキー名を返す。
+
+    既に設定済みの環境変数は上書きしない。GitHub Actions では Secrets が
+    本物の環境変数として渡るため、そちらが常に優先される。
+    """
+    path = path or DOTENV_PATH
+    if not path.exists():
+        return []
+
+    # メモ帳で保存されるとBOM付きUTF-8やcp932になりうるので順に試す
+    text = None
+    for encoding in ("utf-8-sig", "cp932"):
+        try:
+            text = path.read_text(encoding=encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        raise SetupError(
+            f"{path} の文字コードを判別できませんでした。UTF-8 で保存し直してください。"
+        )
+
+    loaded: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, separator, value = line.partition("=")  # 値に = が含まれても壊れない
+        if not separator:
+            continue
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and value and key not in os.environ:
+            os.environ[key] = value
+            loaded.append(key)
+    return loaded
 
 
 class SetupError(RuntimeError):
@@ -65,10 +105,11 @@ def load_genres() -> dict[str, Any]:
 
 
 def credentials() -> dict[str, str | None]:
-    """楽天APIの資格情報。GitHub Secrets / 環境変数から読む。
+    """楽天APIの資格情報。.env / 環境変数 / GitHub Secrets から読む。
 
     現行の楽天ウェブサービスAPIは applicationId と accessKey の両方が必須。
     """
+    load_dotenv()
     app_id = os.environ.get("RAKUTEN_APP_ID")
     access_key = os.environ.get("RAKUTEN_ACCESS_KEY")
     missing = [
@@ -78,9 +119,11 @@ def credentials() -> dict[str, str | None]:
     ]
     if missing:
         raise SetupError(
-            f"環境変数が未設定です: {', '.join(missing)}\n"
-            "Rakuten Developers のアプリ管理画面で applicationId と accessKey を確認し、\n"
-            "ローカルでは環境変数、GitHub Actions では Secrets に設定してください。"
+            f"資格情報が未設定です: {', '.join(missing)}\n"
+            f"プロジェクト直下の .env に記入してください（テンプレート: .env.example）。\n"
+            f"  {DOTENV_PATH}\n"
+            "Rakuten Developers のアプリ管理画面で applicationId と accessKey を確認できます。\n"
+            "GitHub Actions で動かす場合は同じ名前で Secrets に登録してください。"
         )
     return {
         "application_id": app_id,

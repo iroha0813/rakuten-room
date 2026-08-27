@@ -56,10 +56,13 @@ def build_prompt(item: dict[str, Any], genre_label: str, angle: str) -> str:
 
 
 def _client():
+    config.load_dotenv()
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise RuntimeError(
-            "環境変数 ANTHROPIC_API_KEY が未設定です。\n"
-            "console.anthropic.com でキーを発行し、GitHub Actions では Secrets に設定してください。"
+        raise config.SetupError(
+            "ANTHROPIC_API_KEY が未設定です。\n"
+            f"プロジェクト直下の .env に記入してください（テンプレート: .env.example）。\n"
+            f"  {config.DOTENV_PATH}\n"
+            "キーは console.anthropic.com → Settings → API keys で発行できます。"
         )
     from anthropic import Anthropic
 

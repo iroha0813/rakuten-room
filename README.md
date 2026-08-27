@@ -43,13 +43,26 @@ Claude APIで完全に自動化でき、これは規約上まったく問題な�
 ```powershell
 uv venv --python 3.12 .venv
 uv pip install --link-mode=copy --python .venv\Scripts\python.exe -r requirements-dev.txt
-
-$env:RAKUTEN_APP_ID = "..."
-$env:RAKUTEN_ACCESS_KEY = "..."
-$env:ANTHROPIC_API_KEY = "..."
+Copy-Item .env.example .env
 ```
 
 > `--link-mode=copy` は OneDrive 配下でハードリンクが張れないため必要。
+
+`.env` をテキストエディタで開き、`=` の右側に値を貼り付けて保存します。
+
+```dotenv
+RAKUTEN_APP_ID=f843e532-....
+RAKUTEN_ACCESS_KEY=....
+RAKUTEN_AFFILIATE_ID=
+ANTHROPIC_API_KEY=sk-ant-....
+```
+
+`.env` は `.gitignore` されているので GitHub には上がりません。本物の環境変数が
+設定されている場合はそちらが優先されるため、GitHub Actions では Secrets がそのまま効きます。
+
+> **注意**: このプロジェクトは OneDrive 配下にあるため、`.env` も OneDrive に
+> 同期されクラウド上に保存されます。それを避けたい場合はプロジェクトごと
+> OneDrive の外（例: `C:\dev\rakuten-room`）に移してください。
 
 ### 3. 疎通確認とジャンルID確定
 
