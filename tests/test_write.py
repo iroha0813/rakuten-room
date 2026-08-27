@@ -1,0 +1,297 @@
+"""プレゼン文生成のテスト。Claude API は呼ばない。"""
+
+from __future__ import annotations
+
+import pytest
+
+from room import write
+
+SETTINGS = {
+    "llm": {"model": "claude-haiku-4-5", "max_tokens": 512, "max_chars": 200},
+    "genres": {"food": {"label": "食品"}},
+}
+
+
+def make_item(**overrides):
+    item = {
+        "itemName": "無洗米 あきたこまち 10kg",
+        "itemPrice": 5950,
+        "shopName": "ハーベストシーズン",
+        "reviewCount": 65235,
+        "reviewAverage": 4.68,
+        "itemCaption": "今なら送料無料、通常5,950円のところ特価！",
+        "_genre_key": "food",
+    }
+    item.update(overrides)
+    return item
+
+
+class FakeClient:
+    """指定したテキストを順に返すスタブ。"""
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.calls: list[list[dict]] = []
+        self.messages = self
+
+    def create(self, *, model, max_tokens, system, messages):
+        self.calls.append(messages)
+        text = self.replies.pop(0) if self.replies else ""
+
+        class Block:
+            type = "text"
+
+        block = Block()
+        block.text = text
+
+        class Response:
+            content = [block]
+
+        return Response()
+
+
+class TestContainsPrice:
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "1,980円でこの内容",
+            "¥1980はお得",
+            "１９８０円です",
+            "30%OFFで買えます",
+            "50％オフ",
+            "500ポイント還元",
+        ],
+    )
+    def test_detects_price_expressions(self, text):
+        assert write.contains_price(text) is True
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "毎日使うものだから、失敗したくない人に選ばれています",
+            "レビュー6万件超の定番です",  # 件数は金額ではない
+            "10kgでこの手軽さ",
+            "",
+        ],
+    )
+    def test_ignores_non_price_numbers(self, text):
+        assert write.contains_price(text) is False
+
+
+class TestPriceBand:
+    def test_maps_to_qualitative_labels(self):
+        assert write.price_band(980) == "気軽に試せる価格帯"
+        assert write.price_band(5950) == "日用品としては少し奮発する価格帯"
+        assert write.price_band(20000) == "じっくり選んで買う価格帯"
+        assert write.price_band(99000) == write.PRICE_BAND_TOP
+
+    def test_boundaries_are_exclusive_upward(self):
+        assert write.price_band(2999) == "気軽に試せる価格帯"
+        assert write.price_band(3000) == "日用品としては少し奮発する価格帯"
+
+
+class TestStripPrices:
+    def test_masks_prices_embedded_in_product_names(self):
+        名前 = "＼81%OFF＆P2倍で2,174円！／ワイヤレスイヤホン"
+        masked = write.strip_prices(名前)
+        assert "2,174円" not in masked
+        assert "81%OFF" not in masked
+        assert "ワイヤレスイヤホン" in masked
+
+    def test_leaves_non_price_text_alone(self):
+        assert write.strip_prices("10kg 5kg×2袋 送料無料") == "10kg 5kg×2袋 送料無料"
+
+
+class TestBuildPrompt:
+    def test_never_passes_the_numeric_price(self):
+        """商品説明や商品名に埋まった金額も渡さないこと。"""
+        prompt = write.build_prompt(make_item(), "食品", "切り口")
+        assert "5,950" not in prompt
+        assert "5950" not in prompt
+        assert "価格の質感" in prompt
+
+    def test_masks_prices_from_the_caption(self):
+        item = make_item(itemCaption="通常3,980円が今だけ50%OFF！送料無料でお届け")
+        prompt = write.build_prompt(item, "食品", "切り口")
+        assert "3,980" not in prompt
+        assert "50%OFF" not in prompt
+        assert "送料無料" in prompt  # 金額以外の訴求は残す
+
+    def test_includes_review_metrics_and_angle(self):
+        prompt = write.build_prompt(make_item(), "食品", "定番として選ばれ続けている理由")
+        assert "65235" in prompt
+        assert "4.68" in prompt
+        assert "定番として選ばれ続けている理由" in prompt
+
+    def test_omits_empty_fields(self):
+        prompt = write.build_prompt(make_item(catchcopy=None, itemCaption=""), "食品", "x")
+        assert "キャッチコピー" not in prompt
+        assert "商品説明" not in prompt
+
+
+class TestReviewPitch:
+    def test_clean_text_passes(self):
+        text = "毎朝のお米を研ぐ手間がもう不要。\n\n無洗米だから朝が楽になります。\n#無洗米"
+        assert write.review_pitch(text, 200) == []
+
+    def test_flags_price(self):
+        problems = write.review_pitch("1,980円でこの内容。", 200)
+        assert any("金額" in p for p in problems)
+
+    def test_flags_length(self):
+        problems = write.review_pitch("あ" * 250, 200)
+        assert any("250字" in p for p in problems)
+
+    def test_flags_first_line_cut_mid_sentence(self):
+        problems = write.review_pitch("毎日の洗濯だからこそ、\n信頼できるものを。", 200)
+        assert any("1行目" in p for p in problems)
+
+    def test_accepts_first_line_ending_in_a_full_stop(self):
+        assert write.review_pitch("毎日の洗濯に信頼を。\n続きます。", 200) == []
+
+    def test_accepts_question_and_exclamation(self):
+        assert write.review_pitch("油汚れで困っていませんか？\n本文。", 200) == []
+        assert write.review_pitch("これは便利！\n本文。", 200) == []
+
+    def test_flags_first_line_too_long_for_the_feed(self):
+        long_line = "あ" * 60 + "。"
+        problems = write.review_pitch(long_line + "\n本文。", 500)
+        assert any("1行目が" in p and "字あります" in p for p in problems)
+
+    def test_flags_review_metrics_in_the_first_line(self):
+        problems = write.review_pitch("4000件超のレビューで支持される定番です。\n本文。", 200)
+        assert any("1行目にレビュー件数" in p for p in problems)
+
+    def test_allows_review_metrics_later(self):
+        text = "毎日の洗濯を楽にしたい人へ。\n4000件超のレビューが実力を物語ります。"
+        assert write.review_pitch(text, 200) == []
+
+    def test_reports_several_problems_at_once(self):
+        problems = write.review_pitch("1,980円だから、\n" + "あ" * 250, 200)
+        assert len(problems) == 3
+
+
+class TestGenerate:
+    def test_accepts_clean_output_without_retry(self, monkeypatch):
+        client = FakeClient(["毎日のごはんを楽にしたい人へ。無洗米は洗う手間が消えます🍚"])
+        monkeypatch.setattr(write, "_client", lambda: client)
+        items = [make_item()]
+        write.generate(items, SETTINGS)
+        assert "無洗米" in items[0]["_pitch"]
+        assert len(client.calls) == 1
+
+    def test_retries_once_when_price_leaks(self, monkeypatch, capsys):
+        client = FakeClient(
+            ["5,950円でこの内容はお得です。", "毎日のごはんを楽にしたい人へ。洗う手間が消えます🍚"]
+        )
+        monkeypatch.setattr(write, "_client", lambda: client)
+        items = [make_item()]
+        write.generate(items, SETTINGS)
+
+        assert write.contains_price(items[0]["_pitch"]) is False
+        assert len(client.calls) == 2
+        assert "書き直します" in capsys.readouterr().out
+        # 2回目は会話を続けて直させている
+        assert client.calls[1][1]["role"] == "assistant"
+
+    def test_retries_when_too_long(self, monkeypatch):
+        client = FakeClient(["あ" * 260 + "。", "短く直しました。"])
+        monkeypatch.setattr(write, "_client", lambda: client)
+        items = [make_item()]
+        write.generate(items, SETTINGS)
+        assert items[0]["_pitch"] == "短く直しました。"
+
+    def test_retries_when_first_line_is_cut(self, monkeypatch):
+        client = FakeClient(["毎日の洗濯だからこそ、\n信頼を。", "毎日の洗濯に信頼を。\n本文。"])
+        monkeypatch.setattr(write, "_client", lambda: client)
+        items = [make_item()]
+        write.generate(items, SETTINGS)
+        assert items[0]["_pitch"].split("\n")[0] == "毎日の洗濯に信頼を。"
+
+    def test_keeps_text_when_retry_does_not_improve(self, monkeypatch, capsys):
+        client = FakeClient(["5,950円です。", "やはり5,950円です。"])
+        monkeypatch.setattr(write, "_client", lambda: client)
+        items = [make_item()]
+        write.generate(items, SETTINGS)
+        assert items[0]["_pitch"] == "5,950円です。"
+        assert "改善せず" in capsys.readouterr().out
+
+    def test_accepts_partial_improvement(self, monkeypatch, capsys):
+        """完璧でなくても指摘が減ったなら採用する。
+
+        全か無かにすると、惜しいところまで直った文を捨てて
+        元の悪い文へ戻ってしまう。
+        """
+        bad = "1,980円だから、\n" + "あ" * 250  # 金額 + 字数 + 1行目途中切れ
+        better = "毎日を楽にしたい人へ。\n" + "あ" * 250  # 字数超過だけ残る
+        client = FakeClient([bad, better])
+        monkeypatch.setattr(write, "_client", lambda: client)
+        items = [make_item()]
+        write.generate(items, SETTINGS)
+
+        assert items[0]["_pitch"] == better
+        assert "一部だけ改善" in capsys.readouterr().out
+
+    def test_one_failure_does_not_stop_the_rest(self, monkeypatch, capsys):
+        class Flaky(FakeClient):
+            def create(self, **kwargs):
+                if not self.calls:
+                    self.calls.append(kwargs["messages"])
+                    raise RuntimeError("boom")
+                return super().create(**kwargs)
+
+        client = Flaky(["2件目は成功"])
+        monkeypatch.setattr(write, "_client", lambda: client)
+        items = [make_item(), make_item(itemName="別の商品")]
+        write.generate(items, SETTINGS)
+
+        assert items[0]["_pitch"] is None
+        assert items[1]["_pitch"] == "2件目は成功"
+        assert "失敗しました" in capsys.readouterr().out
+
+    def test_result_survives_a_crash_in_the_retry_path(self, monkeypatch):
+        """API呼び出しが成功していれば、後段で例外が出ても文章を失わないこと。
+
+        警告の print が UnicodeEncodeError を投げて生成結果ごと捨てられる
+        事故が実際に起きたため、その再発を止める。
+        """
+        client = FakeClient(["1,980円です。"])  # 書き直し対象になる
+        monkeypatch.setattr(write, "_client", lambda: client)
+
+        def boom(*args, **kwargs):
+            raise UnicodeEncodeError("cp932", "—", 0, 1, "illegal multibyte sequence")
+
+        monkeypatch.setattr("builtins.print", boom)
+        items = [make_item()]
+        write.generate(items, SETTINGS)
+        assert items[0]["_pitch"] == "1,980円です。"
+
+    def test_dry_run_makes_no_api_call(self, monkeypatch, capsys):
+        def boom():
+            raise AssertionError("dry-run でAPIクライアントを作ってはいけない")
+
+        monkeypatch.setattr(write, "_client", boom)
+        items = [make_item()]
+        write.generate(items, SETTINGS, dry_run=True)
+        assert items[0]["_pitch"] is None
+        assert "価格の質感" in capsys.readouterr().out
+
+    def test_angles_rotate_across_items(self, monkeypatch):
+        client = FakeClient(["a", "b", "c"])
+        monkeypatch.setattr(write, "_client", lambda: client)
+        items = [make_item(), make_item(), make_item()]
+        write.generate(items, SETTINGS)
+        angles = [i["_angle"] for i in items]
+        assert len(set(angles)) == 3
+
+
+class TestSystemPrompt:
+    def test_states_the_feed_truncation_constraint(self):
+        system = write.SYSTEM_PROMPT.format(max_chars=200)
+        assert "40〜60字" in system
+        assert "続きを読む" in system
+
+    def test_forbids_prices_and_fabricated_experience(self):
+        system = write.SYSTEM_PROMPT.format(max_chars=200)
+        assert "金額・価格・割引率・ポイント倍率を書かない" in system
+        assert "創作しない" in system
