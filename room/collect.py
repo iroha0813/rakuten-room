@@ -69,6 +69,48 @@ def collect_genre(
     return items
 
 
+def collect_keyword(
+    client: RakutenClient,
+    *,
+    genre_key: str,
+    keyword: str,
+    genre_cfg: dict[str, Any],
+    collect_cfg: dict[str, Any],
+    target: int,
+) -> list[dict[str, Any]]:
+    """キーワード検索で候補を集める。
+
+    ジャンルツリーに存在しないカテゴリ（ふるさと納税など）を拾うための経路。
+    ランキングAPIはジャンルIDしか受け付けないため、検索のみ。
+    """
+    items: list[dict[str, Any]] = []
+    max_pages = int(collect_cfg.get("search_max_pages", 3))
+
+    for page in range(1, max_pages + 1):
+        if len(items) >= target * 2:
+            break
+        try:
+            raw = client.search_items(
+                keyword=keyword,
+                hits=int(collect_cfg.get("search_hits", 30)),
+                page=page,
+                sort=str(collect_cfg.get("search_sort", "standard")),
+                min_price=int(genre_cfg["price_min"]),
+                max_price=int(genre_cfg["price_max"]),
+                min_review_average=float(collect_cfg.get("min_review_average", 0.0)),
+                min_review_count=int(collect_cfg.get("min_review_count", 0)),
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[warn] {genre_key}: 「{keyword}」検索 page={page} に失敗しました ({exc})")
+            break
+        for entry in raw:
+            entry["_genre_key"] = genre_key
+            entry["_rank"] = None
+            items.append(entry)
+
+    return items
+
+
 def collect_all(
     client: RakutenClient,
     settings: dict[str, Any],
@@ -83,17 +125,21 @@ def collect_all(
     for genre_key, genre_cfg in genres.items():
         entry = genre_ids.get(genre_key) or {}
         rakuten_genres = entry.get("genre_ids") or []
-        if not rakuten_genres:
+        keywords = genre_cfg.get("keywords") or []
+
+        if not rakuten_genres and not keywords:
             print(
                 f"[warn] {genre_key} のジャンルIDが config/genres.yaml にありません。"
                 " scripts/fetch_genres.py を実行してください。"
             )
             continue
 
-        # 1つのキーに複数の楽天ジャンルが割り当たるので、目標件数は分割する
+        # 1キーに複数の収集元（ジャンル + キーワード）が割り当たるので目標件数を分割する
+        sources = len(rakuten_genres) + len(keywords)
         target = max(
-            5, _genre_target(daily_count, multiplier, genres, genre_key) // len(rakuten_genres)
+            5, _genre_target(daily_count, multiplier, genres, genre_key) // sources
         )
+
         found: list[dict[str, Any]] = []
         for rakuten_genre in rakuten_genres:
             found.extend(
@@ -101,6 +147,17 @@ def collect_all(
                     client,
                     genre_key=genre_key,
                     genre_id=rakuten_genre["id"],
+                    genre_cfg=genre_cfg,
+                    collect_cfg=collect_cfg,
+                    target=target,
+                )
+            )
+        for keyword in keywords:
+            found.extend(
+                collect_keyword(
+                    client,
+                    genre_key=genre_key,
+                    keyword=keyword,
                     genre_cfg=genre_cfg,
                     collect_cfg=collect_cfg,
                     target=target,

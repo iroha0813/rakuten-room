@@ -1,0 +1,27 @@
+# scripts/fetch_genres.py が生成。手で編集してもよい。
+# genre_ids は楽天市場のルートジャンル。1キーに複数のジャンルを割り当てられる。
+daily_goods:
+  label: 日用品・キッチン雑貨
+  genre_ids:
+  - id: '215783'
+    name: 日用品雑貨・文房具・手芸
+  - id: '558944'
+    name: キッチン用品・食器・調理器具
+gadget:
+  label: ガジェット・PC周辺
+  genre_ids:
+  - id: '100026'
+    name: パソコン・周辺機器
+  - id: '564500'
+    name: スマートフォン・タブレット
+  - id: '211742'
+    name: TV・オーディオ・カメラ
+food:
+  label: 食品・飲料・ふるさと納税
+  genre_ids:
+  - id: '100227'
+    name: 食品
+  - id: '551167'
+    name: スイーツ・お菓子
+  - id: '100316'
+    name: 水・ソフトドリンク

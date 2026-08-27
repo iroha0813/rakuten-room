@@ -73,10 +73,17 @@ class RakutenClient:
         settings = settings or config.load_settings()
         collect = settings.get("collect", {})
         creds = config.credentials()
+
+        # affiliateId を渡すと itemUrl 自体が hb.afl.rakuten.co.jp のリダイレクトURLに
+        # 差し替わる。ROOMの「コレ！」は楽天市場の商品ページURLを前提とするため、
+        # ROOM運用では絶対に渡さない。ブログ/SNS展開時だけ明示的に有効化する。
+        affiliate_cfg = settings.get("affiliate", {}) or {}
+        use_affiliate = bool(affiliate_cfg.get("use_affiliate_links", False))
+
         return cls(
             application_id=creds["application_id"],
             access_key=creds["access_key"],
-            affiliate_id=creds.get("affiliate_id"),
+            affiliate_id=creds.get("affiliate_id") if use_affiliate else None,
             interval_sec=float(collect.get("request_interval_sec", 1.0)),
             max_retries=int(collect.get("max_retries", 3)),
         )
