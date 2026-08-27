@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import re
+from datetime import date
 from typing import Any
 
 from . import config, store
@@ -32,6 +33,18 @@ DEAL_PATTERN = re.compile(
 )
 
 
+# 期間が書かれていないので検証しようがないお得情報。
+# 「マラソン限定」だけでは開催中か分からず、書くと嘘になりうる。
+UNVERIFIABLE_DEAL = re.compile(
+    r"マラソン|スーパーSALE|スーパーセール|タイムセール|期間限定|本日限り|今だけ|ラストチャンス"
+)
+
+# お得情報として扱う表現すべて。伏せ字と検出の両方でこれを使う。
+ANY_DEAL_PATTERN = re.compile(
+    f"{DEAL_PATTERN.pattern}|{UNVERIFIABLE_DEAL.pattern}", re.IGNORECASE
+)
+
+
 def contains_price(text: str, allow_deal_info: bool = False) -> bool:
     """本文に書いてはいけない金額表現が混ざっていないか。
 
@@ -41,7 +54,7 @@ def contains_price(text: str, allow_deal_info: bool = False) -> bool:
     text = text or ""
     if YEN_PATTERN.search(text):
         return True
-    if not allow_deal_info and DEAL_PATTERN.search(text):
+    if not allow_deal_info and ANY_DEAL_PATTERN.search(text):
         return True
     return False
 
@@ -57,9 +70,47 @@ FIRST_LINE_LIMIT = 50
 REVIEW_MENTION = re.compile(r"レビュー|口コミ|[\d０-９][\d０-９,，]*\s*件|★|星[\d０-９]")
 
 
-def review_pitch(text: str, max_chars: int, allow_deal_info: bool = False) -> list[str]:
+# 裏づけなしに書かれると嘘になる実績・最上級表現。
+# 「2024年の年間1位と上半期1位」を「2年連続1位」と書いてしまう事故が実際に起きた。
+CLAIM_PATTERN = re.compile(
+    r"\d+\s*年連続|No\.?\s*1|ナンバーワン|第\s*\d+\s*位|\d+\s*冠"
+    r"|業界(?:初|一|最)|世界一|日本一|最強|最高峰|唯一",
+    re.IGNORECASE,
+)
+
+
+def _normalize_claim(text: str) -> str:
+    return re.sub(r"[\s　・.．]", "", text).lower()
+
+
+def ungrounded_claims(text: str, source: str) -> list[str]:
+    """商品情報に見当たらない実績・最上級表現を拾う。"""
+    haystack = _normalize_claim(source)
+    found: list[str] = []
+    for match in CLAIM_PATTERN.finditer(text or ""):
+        claim = match.group(0)
+        if _normalize_claim(claim) not in haystack and claim not in found:
+            found.append(claim)
+    return found
+
+
+def review_pitch(
+    text: str,
+    max_chars: int,
+    allow_deal_info: bool = False,
+    source: str = "",
+) -> list[str]:
     """生成文の問題点を並べる。空なら合格。"""
     problems: list[str] = []
+
+    if source:
+        claims = ungrounded_claims(text, source)
+        if claims:
+            problems.append(
+                f"商品情報に書かれていない実績表現があります: {'、'.join(claims)}。"
+                "商品情報にそのまま書かれている実績だけを、書かれているとおりに使ってください。"
+                "複数の実績を組み合わせて新しい実績を作らないでください。"
+            )
     if contains_price(text, allow_deal_info):
         if allow_deal_info:
             problems.append(
@@ -95,6 +146,51 @@ def review_pitch(text: str, max_chars: int, allow_deal_info: bool = False) -> li
     return problems
 
 
+# 商品名によく現れる開催期間の書き方。
+_PERIOD_RANGE = re.compile(r"(\d{1,2})/(\d{1,2})\s*[～〜~\-−–]\s*(?:(\d{1,2})/)?(\d{1,2})")
+_PERIOD_DEADLINE = re.compile(r"(?:(\d{1,2})/)?(\d{1,2})\s*日?\s*(?:正午|\d{1,2}:\d{2})?\s*まで")
+
+
+def deal_period_status(text: str, today: date) -> str:
+    """商品名に書かれたセール期間が今日を含むか。
+
+    "active"       今日が期間内、または期間の記載がなく検証も不要
+    "outside"      今日が期間外（まだ始まっていない／もう終わった）
+    "unverifiable" 「マラソン限定」など期間が書かれておらず確認できない
+    """
+    text = text or ""
+
+    match = _PERIOD_RANGE.search(text)
+    if match:
+        start_month, start_day, end_month, end_day = match.groups()
+        start = _as_date(int(start_month), int(start_day), today)
+        end = _as_date(int(end_month or start_month), int(end_day), today)
+        if start and end:
+            return "active" if start <= today <= end else "outside"
+
+    match = _PERIOD_DEADLINE.search(text)
+    if match:
+        month, day = match.groups()
+        deadline = _as_date(int(month) if month else today.month, int(day), today)
+        if deadline:
+            # 「27日正午まで」は当日中に切れる。当日は期限切れ扱いにして安全側に倒す。
+            return "active" if today < deadline else "outside"
+
+    if UNVERIFIABLE_DEAL.search(text):
+        return "unverifiable"
+    return "active"
+
+
+def _as_date(month: int, day: int, today: date) -> date | None:
+    """月日だけの表記に年を補う。年末年始をまたぐ場合は翌年とみなす。"""
+    for year in (today.year, today.year + 1):
+        try:
+            return date(year, month, day)
+        except ValueError:
+            continue
+    return None
+
+
 def strip_prices(text: str, allow_deal_info: bool = False) -> str:
     """書かせたくない金額表現を伏せる。
 
@@ -105,7 +201,7 @@ def strip_prices(text: str, allow_deal_info: bool = False) -> str:
     """
     masked = YEN_PATTERN.sub("〈金額〉", text or "")
     if not allow_deal_info:
-        masked = DEAL_PATTERN.sub("〈お得情報〉", masked)
+        masked = ANY_DEAL_PATTERN.sub("〈お得情報〉", masked)
     return masked
 
 
@@ -124,6 +220,13 @@ ROOMのフィードでは、この文章の最初の2〜3行（およそ40〜60�
 - 実際に自分が使った体験を創作しない。「届いてすぐ使ってます」のような
   未確認の体験談は書かない。商品の特徴やレビューの傾向として伝える。
 - 効果・効能の断定（「必ず痩せる」「絶対に壊れない」など）はしない。
+- 「No.1」「◯年連続1位」「業界唯一」のような実績は、商品情報にそのとおり
+  書かれている場合だけ、書かれているとおりに使う。複数の実績を足し合わせて
+  新しい実績を作らない。
+- 商品情報から読み取れない仕様を推測して書かない。たとえば「骨取り」の商品を
+  「骨が小さい」と書き換えるような言い換えは、商品を誤解させるのでしない。
+- 訳あり品・規格外品など買う人が知っておくべき条件が商品情報にある場合は、
+  隠さずに触れる。
 
 ■ 構成
 - 1行目: フック。誰の、どんな場面の、どんな困りごとに効くのかを言い切る。
@@ -187,8 +290,19 @@ def price_band(price: int) -> str:
 
 
 def build_prompt(
-    item: dict[str, Any], genre_label: str, angle: str, allow_deal_info: bool = False
+    item: dict[str, Any],
+    genre_label: str,
+    angle: str,
+    allow_deal_info: bool = False,
+    today: date | None = None,
 ) -> str:
+    # 期間外・期間不明のセールは、書かれたら嘘になるのでモデルに見せない。
+    # 「9/1〜9/13のクーポン」を8月に紹介する、といった事故を入口で防ぐ。
+    if allow_deal_info:
+        status = deal_period_status(item.get("itemName") or "", today or date.today())
+        allow_deal_info = status == "active"
+        item["_deal_status"] = status
+
     # 商品名・キャッチコピー・商品説明には金額が埋まっていることが多いので伏せる。
     def clean(value: str | None) -> str | None:
         return strip_prices(value or "", allow_deal_info) or None
@@ -269,6 +383,13 @@ def generate(
         genre_label = genres.get(item.get("_genre_key"), {}).get("label", "")
         angle = angles[index % len(angles)]
         prompt = build_prompt(item, genre_label, angle, allow_deals)
+        # build_prompt が期間を見て落としている場合があるので、実際の可否を使う
+        item_allows_deals = allow_deals and item.get("_deal_status", "active") == "active"
+        # 実績表現の裏づけ元。商品名・キャッチ・説明のどこかに書かれていればよい。
+        source = " ".join(
+            str(item.get(key) or "")
+            for key in ("itemName", "catchcopy", "itemCaption")
+        )
         item["_angle"] = angle
 
         if dry_run:
@@ -287,7 +408,9 @@ def generate(
             item["_pitch"] = text or None
 
             # 制約違反は一度だけ指摘して直させる。2回目も駄目なら初回の文を残す。
-            problems = review_pitch(text, max_chars, allow_deals) if text else []
+            problems = (
+                review_pitch(text, max_chars, item_allows_deals, source) if text else []
+            )
             if problems:
                 name = str(item.get("itemName", ""))[:24]
                 _say(f"[warn] {name}: 書き直します / {' / '.join(problems)}")
@@ -303,7 +426,11 @@ def generate(
                     },
                 ]
                 retried = _ask(client, system, messages, llm_cfg)
-                remaining = review_pitch(retried, max_chars, allow_deals) if retried else problems
+                remaining = (
+                    review_pitch(retried, max_chars, item_allows_deals, source)
+                    if retried
+                    else problems
+                )
                 # 完璧でなくても指摘が減ったなら採用する。全か無かにすると、
                 # 惜しいところまで直った文を捨てて元の悪い文に戻ってしまう。
                 if retried and len(remaining) < len(problems):
