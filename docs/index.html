@@ -88,8 +88,11 @@
     background: var(--surface); color: var(--text); text-decoration: none;
     display: inline-block;
   }
-  button.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; }
-  button.copied { background: var(--ok); color: var(--accent-text); border-color: transparent; }
+  .primary {
+    background: var(--accent); color: var(--accent-text); border-color: transparent;
+    flex: 1 1 100%; text-align: center; font-weight: 600;
+  }
+  .copied { background: var(--ok); color: var(--accent-text); border-color: transparent; }
   .done-row { margin-top: 12px; font-size: .85rem; color: var(--muted); }
   .done-row label { cursor: pointer; user-select: none; }
   footer { color: var(--muted); font-size: .8rem; padding-top: 12px; }
@@ -122,15 +125,23 @@
 
 #無洗米 #山形県産 #送料無料</div>
     <div class="actions">
-      <button class="primary copy" data-pitch="山形県産あきたこまち10kg、しかも無洗米で5,950円🍚
+      <a class="btn primary post" href="https://room.rakuten.co.jp/mix?itemcode=hseason:10000260" target="_blank" rel="noopener" data-pitch="山形県産あきたこまち10kg、しかも無洗米で5,950円🍚
 
 炊くときに洗う手間が省けるから、毎日のご飯準備がラク💪
 グルメ大賞11回受賞、65000件超のレビューで高評価という実績も◎
 
 この価格でこのボリュームなら、家族が多い人や毎日食べる人にとって本当にお得感ありますよ✨
 
-#無洗米 #山形県産 #送料無料">紹介文をコピー</button>
-      <a class="btn" href="https://item.rakuten.co.jp/hseason/865804/?rafcid=wsc_i_ra_a88aa8c5-81c2-4fe7-90c5-6641bf4f6500" target="_blank" rel="noopener">楽天市場で開く</a>
+#無洗米 #山形県産 #送料無料">文章をコピーしてROOMで開く</a>
+      <button class="copy" data-pitch="山形県産あきたこまち10kg、しかも無洗米で5,950円🍚
+
+炊くときに洗う手間が省けるから、毎日のご飯準備がラク💪
+グルメ大賞11回受賞、65000件超のレビューで高評価という実績も◎
+
+この価格でこのボリュームなら、家族が多い人や毎日食べる人にとって本当にお得感ありますよ✨
+
+#無洗米 #山形県産 #送料無料">文章だけコピー</button>
+      <a class="btn" href="https://item.rakuten.co.jp/hseason/865804/?rafcid=wsc_i_ra_a88aa8c5-81c2-4fe7-90c5-6641bf4f6500" target="_blank" rel="noopener">楽天市場</a>
     </div>
     <div class="done-row">
       <label><input type="checkbox"> ROOMに投稿した</label>
@@ -153,14 +164,21 @@ Lightning・USB-C・Androidに対応してるので、家族で使い回せる�
 
 #SDカードリーダー #スマホ容量 #写真バックアップ</div>
     <div class="actions">
-      <button class="primary copy" data-pitch="スマホの容量不足に悩むママからの信頼が厚い📱✨
+      <a class="btn primary post" href="https://room.rakuten.co.jp/mix?itemcode=starfocus:10002278" target="_blank" rel="noopener" data-pitch="スマホの容量不足に悩むママからの信頼が厚い📱✨
 
 56,000件以上のレビューで4.47の高評価を獲得してるのは、やっぱり実用性が高いから。アプリ不要で子どもの思い出写真をサッと整理できる手軽さが、多くの人に選ばれてるんだと思います。
 
 Lightning・USB-C・Androidに対応してるので、家族で使い回せるのも好評の理由かもしれませんね💡
 
-#SDカードリーダー #スマホ容量 #写真バックアップ">紹介文をコピー</button>
-      <a class="btn" href="https://item.rakuten.co.jp/starfocus/i-flash-device-hd/?rafcid=wsc_i_ra_a88aa8c5-81c2-4fe7-90c5-6641bf4f6500" target="_blank" rel="noopener">楽天市場で開く</a>
+#SDカードリーダー #スマホ容量 #写真バックアップ">文章をコピーしてROOMで開く</a>
+      <button class="copy" data-pitch="スマホの容量不足に悩むママからの信頼が厚い📱✨
+
+56,000件以上のレビューで4.47の高評価を獲得してるのは、やっぱり実用性が高いから。アプリ不要で子どもの思い出写真をサッと整理できる手軽さが、多くの人に選ばれてるんだと思います。
+
+Lightning・USB-C・Androidに対応してるので、家族で使い回せるのも好評の理由かもしれませんね💡
+
+#SDカードリーダー #スマホ容量 #写真バックアップ">文章だけコピー</button>
+      <a class="btn" href="https://item.rakuten.co.jp/starfocus/i-flash-device-hd/?rafcid=wsc_i_ra_a88aa8c5-81c2-4fe7-90c5-6641bf4f6500" target="_blank" rel="noopener">楽天市場</a>
     </div>
     <div class="done-row">
       <label><input type="checkbox"> ROOMに投稿した</label>
@@ -183,14 +201,21 @@ Lightning・USB-C・Androidに対応してるので、家族で使い回せる�
 
 #ワイヤレスイヤホン #長時間再生 #出張向け</div>
     <div class="actions">
-      <button class="primary copy" data-pitch="出張や移動が多い人、長時間の通話が必要な仕事をしてる人におすすめ💼
+      <a class="btn primary post" href="https://room.rakuten.co.jp/mix?itemcode=gracevally:10000003" target="_blank" rel="noopener" data-pitch="出張や移動が多い人、長時間の通話が必要な仕事をしてる人におすすめ💼
 
 36時間連続再生できるから、充電の心配をせずに使い続けられるのが最高。Type-C急速充電で隙間時間に素早く充電できるし、IPX7防水だから雨の日も安心🌧️
 
 49000件以上のレビューで4.51の高評価というのは、実際に多くの人が日常使いで満足してるってことだと思う。ノイキャン搭載だからカフェでの作業時や飛行機内でも周囲の音を軽減できます✈️
 
-#ワイヤレスイヤホン #長時間再生 #出張向け">紹介文をコピー</button>
-      <a class="btn" href="https://item.rakuten.co.jp/gracevally/grace-x1/?rafcid=wsc_i_ra_a88aa8c5-81c2-4fe7-90c5-6641bf4f6500" target="_blank" rel="noopener">楽天市場で開く</a>
+#ワイヤレスイヤホン #長時間再生 #出張向け">文章をコピーしてROOMで開く</a>
+      <button class="copy" data-pitch="出張や移動が多い人、長時間の通話が必要な仕事をしてる人におすすめ💼
+
+36時間連続再生できるから、充電の心配をせずに使い続けられるのが最高。Type-C急速充電で隙間時間に素早く充電できるし、IPX7防水だから雨の日も安心🌧️
+
+49000件以上のレビューで4.51の高評価というのは、実際に多くの人が日常使いで満足してるってことだと思う。ノイキャン搭載だからカフェでの作業時や飛行機内でも周囲の音を軽減できます✈️
+
+#ワイヤレスイヤホン #長時間再生 #出張向け">文章だけコピー</button>
+      <a class="btn" href="https://item.rakuten.co.jp/gracevally/grace-x1/?rafcid=wsc_i_ra_a88aa8c5-81c2-4fe7-90c5-6641bf4f6500" target="_blank" rel="noopener">楽天市場</a>
     </div>
     <div class="done-row">
       <label><input type="checkbox"> ROOMに投稿した</label>
@@ -213,14 +238,21 @@ Lightning・USB-C・Androidに対応してるので、家族で使い回せる�
 
 #新居祝い #キッチン雑貨 #実用的ギフト</div>
     <div class="actions">
-      <button class="primary copy" data-pitch="新居祝いや結婚祝いに迷ったら、実用的でずっと使える排気口カバーはいかがでしょう？
+      <a class="btn primary post" href="https://room.rakuten.co.jp/mix?itemcode=e-kit:10042679" target="_blank" rel="noopener" data-pitch="新居祝いや結婚祝いに迷ったら、実用的でずっと使える排気口カバーはいかがでしょう？
 
 26000件以上のレビューで平均4.75点🌟日本製の高品質だから、贈った方も安心です。フラットな設計でキッチンがスッキリ、油汚れもしっかりガードして毎日のお手入れも楽々💚
 
 組み立て不要で届いてすぐ使えるのも喜ばれるポイント。実用的だけど嬉しい、そんなギフト探していませんか？
 
-#新居祝い #キッチン雑貨 #実用的ギフト">紹介文をコピー</button>
-      <a class="btn" href="https://item.rakuten.co.jp/e-kit/ek-hk60f01/?rafcid=wsc_i_ra_a88aa8c5-81c2-4fe7-90c5-6641bf4f6500" target="_blank" rel="noopener">楽天市場で開く</a>
+#新居祝い #キッチン雑貨 #実用的ギフト">文章をコピーしてROOMで開く</a>
+      <button class="copy" data-pitch="新居祝いや結婚祝いに迷ったら、実用的でずっと使える排気口カバーはいかがでしょう？
+
+26000件以上のレビューで平均4.75点🌟日本製の高品質だから、贈った方も安心です。フラットな設計でキッチンがスッキリ、油汚れもしっかりガードして毎日のお手入れも楽々💚
+
+組み立て不要で届いてすぐ使えるのも喜ばれるポイント。実用的だけど嬉しい、そんなギフト探していませんか？
+
+#新居祝い #キッチン雑貨 #実用的ギフト">文章だけコピー</button>
+      <a class="btn" href="https://item.rakuten.co.jp/e-kit/ek-hk60f01/?rafcid=wsc_i_ra_a88aa8c5-81c2-4fe7-90c5-6641bf4f6500" target="_blank" rel="noopener">楽天市場</a>
     </div>
     <div class="done-row">
       <label><input type="checkbox"> ROOMに投稿した</label>
@@ -245,7 +277,7 @@ Lightning・USB-C・Androidに対応してるので、家族で使い回せる�
 
 #洗濯洗剤 #詰め替え #家計管理</div>
     <div class="actions">
-      <button class="primary copy" data-pitch="超特大サイズ6袋入りだから、詰め替え頻度が少なくて済む✨
+      <a class="btn primary post" href="https://room.rakuten.co.jp/mix?itemcode=rakuten24:11128644" target="_blank" rel="noopener" data-pitch="超特大サイズ6袋入りだから、詰め替え頻度が少なくて済む✨
 
 すすぎ1回で済むから水道代・時間も節約できます。洗たく槽の防カビ機能も◎
 
@@ -253,16 +285,25 @@ Lightning・USB-C・Androidに対応してるので、家族で使い回せる�
 
 レビュー評価4.68点と高評価で、多くの人に選ばれてるのも信頼の証💪
 
-#洗濯洗剤 #詰め替え #家計管理">紹介文をコピー</button>
-      <a class="btn" href="https://item.rakuten.co.jp/rakuten24/404889/?rafcid=wsc_i_ra_a88aa8c5-81c2-4fe7-90c5-6641bf4f6500" target="_blank" rel="noopener">楽天市場で開く</a>
+#洗濯洗剤 #詰め替え #家計管理">文章をコピーしてROOMで開く</a>
+      <button class="copy" data-pitch="超特大サイズ6袋入りだから、詰め替え頻度が少なくて済む✨
+
+すすぎ1回で済むから水道代・時間も節約できます。洗たく槽の防カビ機能も◎
+
+ドラム式洗濯機にも対応してるのが便利ですね。
+
+レビュー評価4.68点と高評価で、多くの人に選ばれてるのも信頼の証💪
+
+#洗濯洗剤 #詰め替え #家計管理">文章だけコピー</button>
+      <a class="btn" href="https://item.rakuten.co.jp/rakuten24/404889/?rafcid=wsc_i_ra_a88aa8c5-81c2-4fe7-90c5-6641bf4f6500" target="_blank" rel="noopener">楽天市場</a>
     </div>
     <div class="done-row">
       <label><input type="checkbox"> ROOMに投稿した</label>
     </div>
   </article>
   <footer>
-    <p>使い方: 紹介文をコピー → 「楽天市場で開く」→ 商品ページから「コレ！」して貼り付け。</p>
-    
+    <p>「文章をコピーしてROOMで開く」を押すと、紹介文がクリップボードに入り、
+       ROOMの投稿画面がその商品で開きます。コメント欄に貼り付け、内容を確認して投稿してください。</p>
   </footer>
 </div>
 <script>
@@ -314,25 +355,39 @@ Lightning・USB-C・Androidに対応してるので、家族で使い回せる�
       }
     });
 
+    function copyPitch(el, onDone) {
+      var text = el.getAttribute("data-pitch") || "";
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        // await しない。ここで待つと a要素のネイティブ遷移がブロックされうる。
+        navigator.clipboard.writeText(text).then(onDone, function () {
+          fallbackCopy(text, onDone);
+        });
+      } else {
+        fallbackCopy(text, onDone);
+      }
+    }
+
+    function flash(el, message) {
+      var original = el.textContent;
+      el.textContent = message;
+      el.classList.add("copied");
+      setTimeout(function () {
+        el.textContent = original;
+        el.classList.remove("copied");
+      }, 1600);
+    }
+
     document.querySelectorAll("button.copy").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        var text = btn.getAttribute("data-pitch") || "";
-        var onDone = function () {
-          var original = btn.textContent;
-          btn.textContent = "コピーしました";
-          btn.classList.add("copied");
-          setTimeout(function () {
-            btn.textContent = original;
-            btn.classList.remove("copied");
-          }, 1600);
-        };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(onDone, function () {
-            fallbackCopy(text, onDone);
-          });
-        } else {
-          fallbackCopy(text, onDone);
-        }
+        copyPitch(btn, function () { flash(btn, "コピーしました"); });
+      });
+    });
+
+    // ROOMの投稿画面を開くリンク。preventDefault しないので遷移はそのまま走り、
+    // 開いた先で貼り付けるだけで済むようクリップボードに文章を入れておく。
+    document.querySelectorAll("a.post").forEach(function (link) {
+      link.addEventListener("click", function () {
+        copyPitch(link, function () {});
       });
     });
 

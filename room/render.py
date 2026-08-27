@@ -17,6 +17,10 @@ from . import config
 
 ARCHIVE_KEEP_DAYS = 7
 
+# ROOMの投稿画面を商品指定で開くURL。末尾に itemCode を連結して使う。
+# 楽天市場の商品ページを経由せずに「コレ！」画面へ直接飛べる。
+ROOM_POST_URL = "https://room.rakuten.co.jp/mix?itemcode="
+
 TEMPLATE = """<!doctype html>
 <html lang="ja">
 <head>
@@ -107,8 +111,11 @@ TEMPLATE = """<!doctype html>
     background: var(--surface); color: var(--text); text-decoration: none;
     display: inline-block;
   }
-  button.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; }
-  button.copied { background: var(--ok); color: var(--accent-text); border-color: transparent; }
+  .primary {
+    background: var(--accent); color: var(--accent-text); border-color: transparent;
+    flex: 1 1 100%; text-align: center; font-weight: 600;
+  }
+  .copied { background: var(--ok); color: var(--accent-text); border-color: transparent; }
   .done-row { margin-top: 12px; font-size: .85rem; color: var(--muted); }
   .done-row label { cursor: pointer; user-select: none; }
   footer { color: var(--muted); font-size: .8rem; padding-top: 12px; }
@@ -125,8 +132,8 @@ TEMPLATE = """<!doctype html>
   </header>
 {{CARDS}}
   <footer>
-    <p>使い方: 紹介文をコピー → 「楽天市場で開く」→ 商品ページから「コレ！」して貼り付け。</p>
-    {{ARCHIVE}}
+    <p>「文章をコピーしてROOMで開く」を押すと、紹介文がクリップボードに入り、
+       ROOMの投稿画面がその商品で開きます。コメント欄に貼り付け、内容を確認して投稿してください。</p>
   </footer>
 </div>
 <script>
@@ -178,25 +185,39 @@ TEMPLATE = """<!doctype html>
       }
     });
 
+    function copyPitch(el, onDone) {
+      var text = el.getAttribute("data-pitch") || "";
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        // await しない。ここで待つと a要素のネイティブ遷移がブロックされうる。
+        navigator.clipboard.writeText(text).then(onDone, function () {
+          fallbackCopy(text, onDone);
+        });
+      } else {
+        fallbackCopy(text, onDone);
+      }
+    }
+
+    function flash(el, message) {
+      var original = el.textContent;
+      el.textContent = message;
+      el.classList.add("copied");
+      setTimeout(function () {
+        el.textContent = original;
+        el.classList.remove("copied");
+      }, 1600);
+    }
+
     document.querySelectorAll("button.copy").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        var text = btn.getAttribute("data-pitch") || "";
-        var onDone = function () {
-          var original = btn.textContent;
-          btn.textContent = "コピーしました";
-          btn.classList.add("copied");
-          setTimeout(function () {
-            btn.textContent = original;
-            btn.classList.remove("copied");
-          }, 1600);
-        };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(onDone, function () {
-            fallbackCopy(text, onDone);
-          });
-        } else {
-          fallbackCopy(text, onDone);
-        }
+        copyPitch(btn, function () { flash(btn, "コピーしました"); });
+      });
+    });
+
+    // ROOMの投稿画面を開くリンク。preventDefault しないので遷移はそのまま走り、
+    // 開いた先で貼り付けるだけで済むようクリップボードに文章を入れておく。
+    document.querySelectorAll("a.post").forEach(function (link) {
+      link.addEventListener("click", function () {
+        copyPitch(link, function () {});
       });
     });
 
@@ -225,20 +246,29 @@ def _card(item: dict[str, Any], genres: dict[str, Any]) -> str:
         image = image.get("imageUrl", "")
     image = esc(str(image), quote=True)
 
+    # ROOMの「コレ！して投稿する」画面を商品指定で直接開けるURL。
+    # itemcode は楽天APIが返す itemCode をそのまま使える。
+    # コメントの事前入力はROOM側が受け付けないため、貼り付けは手作業になる。
+    room_url = esc(ROOM_POST_URL + str(item.get("itemCode") or ""), quote=True)
+
     pitch = item.get("_pitch")
     if pitch:
+        pitch_attr = esc(pitch, quote=True)
         pitch_html = '<div class="pitch">' + esc(pitch) + "</div>"
         actions = (
-            '<button class="primary copy" data-pitch="'
-            + esc(pitch, quote=True)
-            + '">紹介文をコピー</button>'
+            f'<a class="btn primary post" href="{room_url}" target="_blank" rel="noopener"'
+            f' data-pitch="{pitch_attr}">文章をコピーしてROOMで開く</a>\n'
+            f'      <button class="copy" data-pitch="{pitch_attr}">文章だけコピー</button>'
         )
     else:
         pitch_html = (
             '<div class="pitch missing">紹介文の生成に失敗しました。'
             "商品ページを見て自分で書くか、明日の候補に回してください。</div>"
         )
-        actions = ""
+        actions = (
+            f'<a class="btn primary" href="{room_url}" target="_blank" rel="noopener">'
+            "ROOMで開く</a>"
+        )
 
     thumb = f'<img class="thumb" src="{image}" alt="" loading="lazy">' if image else ""
 
@@ -254,27 +284,12 @@ def _card(item: dict[str, Any], genres: dict[str, Any]) -> str:
     {pitch_html}
     <div class="actions">
       {actions}
-      <a class="btn" href="{url}" target="_blank" rel="noopener">楽天市場で開く</a>
+      <a class="btn" href="{url}" target="_blank" rel="noopener">楽天市場</a>
     </div>
     <div class="done-row">
       <label><input type="checkbox"> ROOMに投稿した</label>
     </div>
   </article>"""
-
-
-def _archive_links(day: date) -> str:
-    """当日分を除いた過去ページへのリンク。"""
-    archive_dir = config.DOCS_DIR / "archive"
-    if not archive_dir.exists():
-        return ""
-    links = [
-        f'<a href="archive/{f.name}">{f.stem}</a>'
-        for f in sorted(archive_dir.glob("*.html"), reverse=True)
-        if f.stem != day.isoformat()
-    ][:ARCHIVE_KEEP_DAYS]
-    if not links:
-        return ""
-    return "<p>過去の候補: " + " ・ ".join(links) + "</p>"
 
 
 def _prune_archive(archive_dir: Path) -> None:
@@ -300,15 +315,14 @@ def render(
             "config/settings.yaml のレビュー基準や価格帯を緩めてみてください。</p>"
         )
 
-    # アーカイブリンクは当日分を書き込む前に確定させる（自分自身へのリンクを避ける）
-    archive_html = _archive_links(day)
-
+    # 過去ページへのリンクは張らない。楽天ウェブサービス利用規約 第8条4項が
+    # 「ウェブサービスを使用した部分に楽天サイト以外へのリンクを設置すること」を
+    # 禁じているため。過去分は docs/archive/YYYY-MM-DD.html に直接アクセスする。
     page = (
         TEMPLATE.replace("{{TITLE}}", f"ROOM投稿候補 {day.isoformat()}")
         .replace("{{DATE}}", day.isoformat())
         .replace("{{COUNT}}", str(len(items)))
         .replace("{{CARDS}}", cards)
-        .replace("{{ARCHIVE}}", archive_html)
     )
 
     archive_dir = config.DOCS_DIR / "archive"
