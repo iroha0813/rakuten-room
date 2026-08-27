@@ -46,6 +46,42 @@ class RakutenApiError(RuntimeError):
     """楽天APIが回復不能なエラーを返した。"""
 
 
+class IpNotAllowedError(RakutenApiError, config.SetupError):
+    """登録外のIPアドレスから呼び出した。
+
+    SetupError も継承しているので、CLIではtracebackではなく
+    「セットアップが必要です」として読める形で表示される。
+
+    楽天のアプリ登録では「許可されたIPアドレス」が必須で、そこに載っていない
+    アドレスからのリクエストは 403 CLIENT_IP_NOT_ALLOWED で全滅する。
+    家庭用回線のIPは変動するので、これは運用中に必ず起きる。
+    """
+
+
+def current_global_ip(timeout: float = 10.0) -> str | None:
+    """今の送信元グローバルIP。取れなければ None。案内メッセージ用。"""
+    try:
+        response = requests.get("https://api.ipify.org", timeout=timeout)
+        if response.status_code == 200:
+            return response.text.strip()
+    except requests.RequestException:
+        pass
+    return None
+
+
+def _ip_not_allowed_message() -> str:
+    ip = current_global_ip()
+    now = "現在のグローバルIP: " + ip if ip else "現在のグローバルIPは取得できませんでした"
+    return (
+        "楽天APIに登録外のIPアドレスから接続しました (403 CLIENT_IP_NOT_ALLOWED)。\n"
+        f"{now}\n"
+        "Rakuten Developers のアプリ編集画面で「許可されたIPアドレス」に\n"
+        "このIPを追加してください。\n"
+        "  https://webservice.rakuten.co.jp/app/list\n"
+        "家庭用回線のIPは再接続で変わります。頻繁に変わるなら固定IPの環境を検討してください。"
+    )
+
+
 class RakutenClient:
     """レート制限とリトライを内蔵した薄いクライアント。
 
@@ -118,6 +154,8 @@ class RakutenClient:
                     return response.json()
                 # 400番台のうち429以外はリトライしても直らない
                 if 400 <= response.status_code < 500 and response.status_code != 429:
+                    if "CLIENT_IP_NOT_ALLOWED" in response.text:
+                        raise IpNotAllowedError(_ip_not_allowed_message())
                     raise RakutenApiError(
                         f"{endpoint_key} が {response.status_code} を返しました: "
                         f"{response.text[:300]}"

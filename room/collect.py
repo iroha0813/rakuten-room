@@ -12,7 +12,7 @@ import math
 from typing import Any
 
 from . import config, score, store
-from .rakuten import RakutenClient
+from .rakuten import IpNotAllowedError, RakutenClient
 
 
 def _genre_target(daily_count: int, multiplier: int, genres: dict[str, Any], key: str) -> int:
@@ -42,6 +42,8 @@ def collect_genre(
 
     try:
         tag(client.ranking_items(genre_id=genre_id)[: int(collect_cfg.get("ranking_hits", 30))])
+    except IpNotAllowedError:
+        raise  # 他のジャンルを試しても同じ。警告を並べても意味がない
     except Exception as exc:  # noqa: BLE001 - 片方が落ちても他方で続行する
         print(f"[warn] {genre_key}: ランキング取得に失敗しました ({exc})")
 
@@ -62,6 +64,8 @@ def collect_genre(
                     min_review_count=int(collect_cfg.get("min_review_count", 0)),
                 )
             )
+        except IpNotAllowedError:
+            raise
         except Exception as exc:  # noqa: BLE001
             print(f"[warn] {genre_key}: 商品検索 page={page} に失敗しました ({exc})")
             break
@@ -100,6 +104,8 @@ def collect_keyword(
                 min_review_average=float(collect_cfg.get("min_review_average", 0.0)),
                 min_review_count=int(collect_cfg.get("min_review_count", 0)),
             )
+        except IpNotAllowedError:
+            raise
         except Exception as exc:  # noqa: BLE001
             print(f"[warn] {genre_key}: 「{keyword}」検索 page={page} に失敗しました ({exc})")
             break

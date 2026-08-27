@@ -1,9 +1,13 @@
 name: daily-candidates
 
+# 定期実行は無効。楽天ウェブサービスはアプリ登録時の「許可されたIPアドレス」
+# からのリクエストしか受け付けず、GitHub Actionsのランナーは毎回異なるAzureの
+# IPから実行されるため、全リクエストが 403 CLIENT_IP_NOT_ALLOWED で失敗する。
+# 実測済み: https://github.com/iroha0813/rakuten-room/actions/runs/33058423746
+#
+# 定期実行はローカルPCのタスクスケジューラが担う（scripts/run_daily.ps1）。
+# 固定IPの実行環境を用意して楽天に登録すれば、下のcronを復活させられる。
 on:
-  schedule:
-    # 22:00 UTC = 07:00 JST
-    - cron: "0 22 * * *"
   workflow_dispatch:
 
 permissions:

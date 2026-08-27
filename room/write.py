@@ -14,19 +14,36 @@ from typing import Any
 
 from . import config, store
 
-# 金額の書き漏らし検出。全角数字・¥・「％OFF」も拾う。
-PRICE_PATTERN = re.compile(
+# 絶対額。これが古くなると「価格が違う」という一番きつい嘘になるので常に除外する。
+YEN_PATTERN = re.compile(
     r"[\d０-９][\d０-９,，.．]*\s*円"        # 1,980円 / １９８０円
-    r"|[¥￥]\s*[\d０-９]"                    # ¥1980
-    r"|[\d０-９]+\s*[%％]\s*(?:OFF|オフ)"    # 30%OFF
-    r"|[\d０-９][\d０-９,，]*\s*ポイント",    # 500ポイント
+    r"|[¥￥]\s*[\d０-９]",                   # ¥1980
+    re.IGNORECASE,
+)
+
+# お得情報。変動はするが「条件が変わった」程度で、絶対額ほど致命的ではない。
+# settings.yaml の llm.allow_deal_info で許可/禁止を切り替える。
+DEAL_PATTERN = re.compile(
+    r"[\d０-９]+\s*[%％]\s*(?:OFF|オフ)"     # 30%OFF
+    r"|[\d０-９][\d０-９,，]*\s*ポイント"     # 500ポイント
+    r"|[\d０-９]+\s*倍"                      # P10倍
+    r"|クーポン|送料無料|半額|セール|タイムセール",
     re.IGNORECASE,
 )
 
 
-def contains_price(text: str) -> bool:
-    """本文に金額表現が混ざっていないか。"""
-    return bool(PRICE_PATTERN.search(text or ""))
+def contains_price(text: str, allow_deal_info: bool = False) -> bool:
+    """本文に書いてはいけない金額表現が混ざっていないか。
+
+    allow_deal_info が True なら、クーポンや送料無料といったお得情報は許すが、
+    絶対額だけは常に弾く。
+    """
+    text = text or ""
+    if YEN_PATTERN.search(text):
+        return True
+    if not allow_deal_info and DEAL_PATTERN.search(text):
+        return True
+    return False
 
 
 # 1行目がこれらで終わっていたら、文の途中で改行している。
@@ -40,14 +57,21 @@ FIRST_LINE_LIMIT = 50
 REVIEW_MENTION = re.compile(r"レビュー|口コミ|[\d０-９][\d０-９,，]*\s*件|★|星[\d０-９]")
 
 
-def review_pitch(text: str, max_chars: int) -> list[str]:
+def review_pitch(text: str, max_chars: int, allow_deal_info: bool = False) -> list[str]:
     """生成文の問題点を並べる。空なら合格。"""
     problems: list[str] = []
-    if contains_price(text):
-        problems.append(
-            "金額・価格・割引率が含まれています。ROOMが価格を自動表示するため本文には不要で、"
-            "価格改定で古い情報になります。金額に一切触れないでください。"
-        )
+    if contains_price(text, allow_deal_info):
+        if allow_deal_info:
+            problems.append(
+                "「1,980円」のような具体的な金額が含まれています。ROOMが価格を自動表示するうえ、"
+                "価格が変わると本文だけが嘘になります。クーポンや送料無料には触れて構いませんが、"
+                "金額そのものは書かないでください。"
+            )
+        else:
+            problems.append(
+                "金額・価格・割引率が含まれています。ROOMが価格を自動表示するため本文には不要で、"
+                "価格改定で古い情報になります。金額に一切触れないでください。"
+            )
     if len(text) > max_chars:
         problems.append(f"{max_chars}字以内のところ{len(text)}字あります。削ってください。")
 
@@ -71,14 +95,18 @@ def review_pitch(text: str, max_chars: int) -> list[str]:
     return problems
 
 
-def strip_prices(text: str) -> str:
-    """金額表現を伏せる。
+def strip_prices(text: str, allow_deal_info: bool = False) -> str:
+    """書かせたくない金額表現を伏せる。
 
     楽天の商品名・商品説明には「＼81%OFF＆P2倍で2,174円！／」のような
     金額が頻繁に含まれる。そのまま渡すとモデルが書き写してしまうので、
     プロンプトに入れる前に落とす。
+    allow_deal_info が True なら、クーポンや割引率は残して絶対額だけ伏せる。
     """
-    return PRICE_PATTERN.sub("〈金額〉", text or "")
+    masked = YEN_PATTERN.sub("〈金額〉", text or "")
+    if not allow_deal_info:
+        masked = DEAL_PATTERN.sub("〈お得情報〉", masked)
+    return masked
 
 
 SYSTEM_PROMPT = """あなたは楽天ROOMで商品を紹介する日本語のライターです。
@@ -91,8 +119,7 @@ ROOMのフィードでは、この文章の最初の2〜3行（およそ40〜60�
 結論・共感・意外性のいずれかを1行目に置いてください。説明から入らないこと。
 
 ■ 書かないこと
-- 金額・価格・割引率・ポイント倍率を書かない。ROOMが商品価格を自動表示するため
-  重複であり、セールやクーポンで変動するので本文だけが古くなる。
+{deal_rule}
 - 商品名をそのまま書き写さない。ROOMが商品名も表示する。
 - 実際に自分が使った体験を創作しない。「届いてすぐ使ってます」のような
   未確認の体験談は書かない。商品の特徴やレビューの傾向として伝える。
@@ -116,6 +143,17 @@ ROOMのフィードでは、この文章の最初の2〜3行（およそ40〜60�
 
 出力は紹介文の本文のみ。前置き・見出し・囲みの記号は付けない。"""
 
+# 金額の扱い。settings.yaml の llm.allow_deal_info で切り替える。
+DEAL_RULE_STRICT = """- 金額・価格・割引率・ポイント倍率・クーポンを書かない。ROOMが商品価格を
+  自動表示するため重複であり、セールで変動するので本文だけが古くなる。"""
+
+DEAL_RULE_ALLOWED = """- 「1,980円」のような具体的な金額は書かない。ROOMが価格を自動表示するうえ、
+  価格が変わると本文だけが嘘になる。
+- クーポン・送料無料・ポイント倍率・セールといったお得情報は書いてよい。
+  ROOMで最も反応が取れる訴求なので、該当するなら1行目に置いてよい。
+  ただし商品情報に書かれていないお得情報をでっち上げてはいけない。
+  クーポンやセールの記載が商品情報になければ、お得情報には触れないこと。"""
+
 # 同じ構成の繰り返しを避けるため、商品ごとに切り口を変える。
 # フィードで最初に見えるのは40〜60字なので、どれも「1行目で言い切れる」角度にする。
 ANGLES = [
@@ -126,6 +164,9 @@ ANGLES = [
     "定番として選ばれ続けている理由",
     "見落とされがちな利点や、意外な使い道",
 ]
+
+# お得情報を許可しているときだけ回す切り口。ROOMで最も反応が取れる型。
+DEAL_ANGLE = "商品情報にあるお得情報（クーポン・送料無料・ポイント）を最初に出す"
 
 # 価格は「1万円未満/1万円台/…」のような粒度でも本文に漏れると陳腐化するため、
 # モデルには数値を一切渡さず、質感だけを伝える。
@@ -145,18 +186,23 @@ def price_band(price: int) -> str:
     return PRICE_BAND_TOP
 
 
-def build_prompt(item: dict[str, Any], genre_label: str, angle: str) -> str:
+def build_prompt(
+    item: dict[str, Any], genre_label: str, angle: str, allow_deal_info: bool = False
+) -> str:
     # 商品名・キャッチコピー・商品説明には金額が埋まっていることが多いので伏せる。
+    def clean(value: str | None) -> str | None:
+        return strip_prices(value or "", allow_deal_info) or None
+
     facts = {
-        "商品名": strip_prices(item.get("itemName") or "") or None,
+        "商品名": clean(item.get("itemName")),
         # 金額は渡さない。渡すと本文に書かれ、価格改定で古い情報になる。
         "価格の質感": price_band(int(item.get("itemPrice") or 0)),
         "ジャンル": genre_label,
         "ショップ名": item.get("shopName"),
         "レビュー平均": item.get("reviewAverage"),
         "レビュー件数": item.get("reviewCount"),
-        "キャッチコピー": strip_prices(item.get("catchcopy") or "") or None,
-        "商品説明": strip_prices((item.get("itemCaption") or "")[:400]) or None,
+        "キャッチコピー": clean(item.get("catchcopy")),
+        "商品説明": clean((item.get("itemCaption") or "")[:400]),
     }
     lines = [f"- {k}: {v}" for k, v in facts.items() if v not in (None, "")]
     return "商品情報:\n" + "\n".join(lines) + f"\n\n指定された切り口: {angle}"
@@ -209,15 +255,20 @@ def generate(
     """各商品に `_pitch` を付与する。1件の失敗で全体を落とさない。"""
     llm_cfg = settings.get("llm", {})
     max_chars = int(llm_cfg.get("max_chars", 200))
-    system = SYSTEM_PROMPT.format(max_chars=max_chars)
+    allow_deals = bool(llm_cfg.get("allow_deal_info", False))
+    system = SYSTEM_PROMPT.format(
+        max_chars=max_chars,
+        deal_rule=DEAL_RULE_ALLOWED if allow_deals else DEAL_RULE_STRICT,
+    )
     genres = settings["genres"]
+    angles = ANGLES + [DEAL_ANGLE] if allow_deals else ANGLES
 
     client = None if dry_run else _client()
 
     for index, item in enumerate(items):
         genre_label = genres.get(item.get("_genre_key"), {}).get("label", "")
-        angle = ANGLES[index % len(ANGLES)]
-        prompt = build_prompt(item, genre_label, angle)
+        angle = angles[index % len(angles)]
+        prompt = build_prompt(item, genre_label, angle, allow_deals)
         item["_angle"] = angle
 
         if dry_run:
@@ -236,7 +287,7 @@ def generate(
             item["_pitch"] = text or None
 
             # 制約違反は一度だけ指摘して直させる。2回目も駄目なら初回の文を残す。
-            problems = review_pitch(text, max_chars) if text else []
+            problems = review_pitch(text, max_chars, allow_deals) if text else []
             if problems:
                 name = str(item.get("itemName", ""))[:24]
                 _say(f"[warn] {name}: 書き直します / {' / '.join(problems)}")
@@ -252,7 +303,7 @@ def generate(
                     },
                 ]
                 retried = _ask(client, system, messages, llm_cfg)
-                remaining = review_pitch(retried, max_chars) if retried else problems
+                remaining = review_pitch(retried, max_chars, allow_deals) if retried else problems
                 # 完璧でなくても指摘が減ったなら採用する。全か無かにすると、
                 # 惜しいところまで直った文を捨てて元の悪い文に戻ってしまう。
                 if retried and len(remaining) < len(problems):

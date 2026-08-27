@@ -11,6 +11,11 @@ SETTINGS = {
     "genres": {"food": {"label": "食品"}},
 }
 
+DEAL_SETTINGS = {
+    **SETTINGS,
+    "llm": {**SETTINGS["llm"], "allow_deal_info": True},
+}
+
 
 def make_item(**overrides):
     item = {
@@ -99,7 +104,7 @@ class TestStripPrices:
         assert "ワイヤレスイヤホン" in masked
 
     def test_leaves_non_price_text_alone(self):
-        assert write.strip_prices("10kg 5kg×2袋 送料無料") == "10kg 5kg×2袋 送料無料"
+        assert write.strip_prices("10kg 5kg×2袋 無洗米") == "10kg 5kg×2袋 無洗米"
 
 
 class TestBuildPrompt:
@@ -110,12 +115,14 @@ class TestBuildPrompt:
         assert "5950" not in prompt
         assert "価格の質感" in prompt
 
-    def test_masks_prices_from_the_caption(self):
+    def test_masks_prices_and_deals_from_the_caption(self):
+        """既定ではお得情報ごと伏せる。"""
         item = make_item(itemCaption="通常3,980円が今だけ50%OFF！送料無料でお届け")
         prompt = write.build_prompt(item, "食品", "切り口")
         assert "3,980" not in prompt
         assert "50%OFF" not in prompt
-        assert "送料無料" in prompt  # 金額以外の訴求は残す
+        assert "送料無料" not in prompt
+        assert "お届け" in prompt  # 金額以外の説明は残す
 
     def test_includes_review_metrics_and_angle(self):
         prompt = write.build_prompt(make_item(), "食品", "定番として選ばれ続けている理由")
@@ -286,12 +293,82 @@ class TestGenerate:
 
 
 class TestSystemPrompt:
+    def _render(self, deal_rule=None):
+        return write.SYSTEM_PROMPT.format(
+            max_chars=200, deal_rule=deal_rule or write.DEAL_RULE_STRICT
+        )
+
     def test_states_the_feed_truncation_constraint(self):
-        system = write.SYSTEM_PROMPT.format(max_chars=200)
+        system = self._render()
         assert "40〜60字" in system
         assert "続きを読む" in system
 
     def test_forbids_prices_and_fabricated_experience(self):
-        system = write.SYSTEM_PROMPT.format(max_chars=200)
-        assert "金額・価格・割引率・ポイント倍率を書かない" in system
+        system = self._render()
+        assert "金額・価格・割引率・ポイント倍率・クーポンを書かない" in system
         assert "創作しない" in system
+
+class TestDealInfo:
+    """お得情報の解禁。ROOMで最も反応が取れる訴求だが、絶対額だけは常に禁止。"""
+
+    def test_absolute_yen_is_always_rejected(self):
+        assert write.contains_price("1,980円です", allow_deal_info=True) is True
+        assert write.contains_price("¥1980です", allow_deal_info=True) is True
+
+    @pytest.mark.parametrize(
+        "text", ["クーポンあり！", "送料無料です", "30%OFF", "ポイント10倍", "今だけ半額"]
+    )
+    def test_deals_pass_only_when_allowed(self, text):
+        assert write.contains_price(text, allow_deal_info=False) is True
+        assert write.contains_price(text, allow_deal_info=True) is False
+
+    def test_strip_keeps_deals_when_allowed(self):
+        raw = "＼81%OFF＆P2倍で2,174円！／ワイヤレスイヤホン"
+        allowed = write.strip_prices(raw, allow_deal_info=True)
+        assert "2,174円" not in allowed
+        assert "81%OFF" in allowed
+
+    def test_strip_removes_deals_when_not_allowed(self):
+        raw = "＼81%OFF＆P2倍で2,174円！／ワイヤレスイヤホン"
+        strict = write.strip_prices(raw, allow_deal_info=False)
+        assert "2,174円" not in strict
+        assert "81%OFF" not in strict
+
+    def test_prompt_keeps_deals_for_the_model(self):
+        item = make_item(itemCaption="今だけクーポンで3,980円！送料無料")
+        prompt = write.build_prompt(item, "食品", "切り口", allow_deal_info=True)
+        assert "3,980" not in prompt
+        assert "クーポン" in prompt
+        assert "送料無料" in prompt
+
+    def test_deal_angle_is_only_used_when_allowed(self, monkeypatch):
+        client = FakeClient(["a"] * 8)
+        monkeypatch.setattr(write, "_client", lambda: client)
+
+        strict_items = [make_item() for _ in range(7)]
+        write.generate(strict_items, SETTINGS)
+        assert write.DEAL_ANGLE not in [i["_angle"] for i in strict_items]
+
+        client.replies = ["a"] * 8
+        deal_items = [make_item() for _ in range(7)]
+        write.generate(deal_items, DEAL_SETTINGS)
+        assert write.DEAL_ANGLE in [i["_angle"] for i in deal_items]
+
+    def test_system_prompt_switches_rule(self):
+        strict = write.SYSTEM_PROMPT.format(
+            max_chars=200, deal_rule=write.DEAL_RULE_STRICT
+        )
+        allowed = write.SYSTEM_PROMPT.format(
+            max_chars=200, deal_rule=write.DEAL_RULE_ALLOWED
+        )
+        assert "クーポンを書かない" in strict
+        assert "お得情報は書いてよい" in allowed
+        assert "でっち上げてはいけない" in allowed
+
+    def test_generate_accepts_a_coupon_hook(self, monkeypatch):
+        client = FakeClient(["クーポンありでお得に試せます。\n本文。"])
+        monkeypatch.setattr(write, "_client", lambda: client)
+        items = [make_item()]
+        write.generate(items, DEAL_SETTINGS)
+        assert items[0]["_pitch"].startswith("クーポンあり")
+        assert len(client.calls) == 1  # 書き直しが走らない
