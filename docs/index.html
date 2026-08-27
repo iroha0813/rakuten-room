@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>ROOM投稿候補</title>
+<style>
+  :root { --bg:#f6f6f4; --text:#22211e; --muted:#6b6862; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#171614; --text:#ece9e3; --muted:#a09b92; }
+  }
+  :root[data-theme="dark"] { --bg:#171614; --text:#ece9e3; --muted:#a09b92; }
+  body {
+    margin:0; padding:80px 24px; background:var(--bg); color:var(--text);
+    font-family:-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI",
+      "Noto Sans JP", sans-serif;
+    line-height:1.8; text-align:center;
+  }
+  p { color:var(--muted); font-size:.9rem; }
+  code { font-size:.85rem; }
+</style>
+</head>
+<body>
+  <h1>まだ候補は生成されていません</h1>
+  <p>GitHub Actions の <code>daily-candidates</code> ワークフローが<br>
+     初回実行されると、このページが候補一覧に置き換わります。</p>
+  <p>Actions タブから <code>Run workflow</code> で手動実行できます。</p>
+</body>
+</html>

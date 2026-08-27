@@ -1,0 +1,88 @@
+# 楽天ROOM 投稿候補生成 — 全体設定
+# ここを書き換えれば挙動が変わる。コードには定数を埋め込まない方針。
+
+# 1日に生成する投稿候補の件数
+daily_count: 5
+
+# 候補プールを daily_count の何倍集めるか（絞り込みの余地を作る）
+candidate_pool_multiplier: 5
+
+# ---- ジャンル設定 -------------------------------------------------------
+# genre_id は scripts/fetch_genres.py が config/genres.yaml に書き出す。
+# share は配分比率。合計が daily_count に按分される（例 2:2:1 で5件なら 2/2/1）。
+# match は楽天市場のルートジャンル名に対する部分一致キーワード。
+# scripts/fetch_genres.py がこれを使って実際のジャンルIDを引き当てる。
+genres:
+  daily_goods:
+    label: 日用品・キッチン雑貨
+    share: 2
+    price_min: 1000
+    price_max: 8000
+    match:
+      - 日用品雑貨
+      - キッチン用品
+  gadget:
+    label: ガジェット・PC周辺
+    share: 2
+    price_min: 2000
+    price_max: 30000
+    match:
+      - パソコン・周辺機器
+      - スマートフォン
+      - TV・オーディオ・カメラ
+  food:
+    label: 食品・飲料・ふるさと納税
+    share: 1
+    price_min: 2000
+    price_max: 15000
+    match:
+      - 食品
+      - スイーツ・お菓子
+      - 水・ソフトドリンク
+      - ふるさと納税
+
+# ---- 収集 ---------------------------------------------------------------
+collect:
+  min_review_average: 4.0   # これ未満のレビュー評価は拾わない
+  min_review_count: 20      # レビューが少なすぎる商品は評価が固まっていない
+  ranking_hits: 30          # ランキングAPIから拾う件数
+  search_hits: 30           # 商品検索APIから1ページあたり拾う件数
+  search_sort: "-reviewCount" # 並び順。楽天側が拒否する場合は "standard" にする
+  search_max_pages: 3       # 候補が目標数に届くまで最大何ページ辿るか
+  request_interval_sec: 1.0 # 楽天APIへのリクエスト間隔（必ず1秒以上空ける）
+  max_retries: 3
+
+# ---- 選定 ---------------------------------------------------------------
+selection:
+  max_per_shop: 1           # 同一ショップから1日に出す上限（スパム的に見せない）
+  history_ttl_days: 180     # これより古い提示履歴は重複判定から外す
+
+# ---- セール期間ブースト -------------------------------------------------
+# お買い物マラソン/スーパーSALE 中に特定ジャンルを厚くしたいとき有効化する
+sale_boost:
+  enabled: false
+  genre_key: null
+  multiplier: 1.5
+
+# ---- プレゼン文生成 -----------------------------------------------------
+llm:
+  model: claude-haiku-4-5   # claude-opus-5 に変えれば品質が上がる（コストも上がる）
+  max_tokens: 1024
+  max_chars: 200            # ROOMのコメント欄に収まる長さ
+
+# ---- アフィリエイト -----------------------------------------------------
+affiliate:
+  commission_rate: 0.02     # 想定報酬の見積りに使う（楽天の標準料率）
+
+# ---- 成果CSV取り込み ----------------------------------------------------
+# 楽天アフィリエイト管理画面からDLしたCSVの列名。
+# 楽天側の仕様変更で列名が変わったらここを直す（コードは触らなくてよい）。
+report:
+  encoding: cp932
+  columns:
+    date: 発生日
+    item_name: 商品名
+    item_code: 商品ID
+    price: 商品価格
+    reward: 報酬額
+    count: 件数

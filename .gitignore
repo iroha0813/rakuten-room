@@ -1,0 +1,11 @@
+# 成果CSVと収益分析結果はリポジトリに入れない（パブリックリポジトリのため）
+local/*
+!local/.gitkeep
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.pytest_cache/
+.DS_Store
