@@ -9,9 +9,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import re
-from datetime import date
-from typing import Any
+from datetime import date, timedelta
+from typing import Any, Iterable
 
 from . import config, store
 
@@ -88,6 +89,14 @@ def count_emoji(text: str) -> int:
     return len(EMOJI_PATTERN.findall(text or ""))
 
 
+# ハッシュタグは型ごとに個数を変える。毎回3個並ぶと投稿の末尾が同じ形になる。
+HASHTAG_PATTERN = re.compile(r"[#＃][^\s#＃]+")
+
+
+def count_hashtags(text: str) -> int:
+    return len(HASHTAG_PATTERN.findall(text or ""))
+
+
 # 裏づけなしに書かれると嘘になる実績・最上級表現。
 # 「2024年の年間1位と上半期1位」を「2年連続1位」と書いてしまう事故が実際に起きた。
 CLAIM_PATTERN = re.compile(
@@ -118,8 +127,12 @@ def review_pitch(
     max_chars: int,
     allow_deal_info: bool = False,
     source: str = "",
+    hashtags: int | None = None,
 ) -> list[str]:
-    """生成文の問題点を並べる。空なら合格。"""
+    """生成文の問題点を並べる。空なら合格。
+
+    hashtags を渡すと、その型で決めた個数に収まっているかも見る。
+    """
     problems: list[str] = []
 
     if source:
@@ -174,6 +187,16 @@ def review_pitch(
             f"絵文字が{emoji}個あります。多すぎると読みにくいので{MAX_EMOJI}個までに"
             "減らしてください。"
         )
+
+    if hashtags is not None:
+        found = count_hashtags(text)
+        if found > hashtags:
+            problems.append(
+                f"ハッシュタグが{found}個あります。この型では{hashtags}個までです。"
+                "多いほうから削ってください。"
+            )
+        elif found == 0:
+            problems.append(f"ハッシュタグがありません。末尾に{hashtags}個まで付けてください。")
     return problems
 
 
@@ -275,21 +298,19 @@ ROOMの投稿は、友達に「これ良かったよ」と教える調子で書�
 - 訳あり品・規格外品など買う人が知っておくべき条件が商品情報にある場合は、
   隠さずに触れる。
 
-■ 構成
-- 1行目: フック。誰の、どんな場面の、どんな困りごとに効くのかを言い切る。
-  50字以内の完結した一文。読点で終わらせない。
-  レビュー件数・評価・星の数を1行目に書かない。読み手を止める力が弱い。
+■ 1行目（どの型で書くときも共通）
+- 50字以内の完結した一文。読点で終わらせない。
+- レビュー件数・評価・星の数を1行目に書かない。読み手を止める力が弱い。
 - 文の途中で改行しない。改行は文の切れ目にだけ入れる。
-- 中盤: その根拠を具体的に。「指定された切り口」を軸に据える。
-  レビュー件数や評価に触れるのは多くても1回だけ。数字を並べず、
-  「なぜ支持され続けているのか」の裏づけとして自然に織り込む。
-- 末尾: ハッシュタグを最大3個。
 
-■ 体裁
-- 全体で{max_chars}字以内。150字前後を目安にし、超えそうなら説明を削る。
-  日本語。
+■ 全体に共通する体裁
+- 全体で{max_chars}字以内。日本語。
+- レビュー件数や評価に触れるのは多くても1回だけ。数字を並べず、
+  「なぜ支持され続けているのか」の裏づけとして自然に織り込む。
 - 改行で読みやすく区切る。スマホの画面幅を意識する。
-- 毎回同じ型で書かない。
+
+構成・分量・ハッシュタグの数は商品ごとに「指定された型」で変わります。
+型は毎回違うものが渡されるので、前に書いたものと同じ運びにしないでください。
 
 出力は紹介文の本文のみ。前置き・見出し・囲みの記号は付けない。"""
 
@@ -318,6 +339,138 @@ ANGLES = [
 # お得情報を許可しているときだけ回す切り口。ROOMで最も反応が取れる型。
 DEAL_ANGLE = "商品情報にあるお得情報（クーポン・送料無料・ポイント）を最初に出す"
 
+# 投稿の「型」。切り口（何を言うか）とは独立に、構成そのものを差し替える。
+# 切り口だけ変えても骨格が1種類だとフィードでは同じ投稿に見えるため、
+# 構成・分量・ハッシュタグ数をまとめて振る。
+# target_chars は目安で、上限は settings.yaml の llm.max_chars が握る。
+FORMATS: list[dict[str, Any]] = [
+    {
+        "key": "hook_reason",
+        "label": "フック→根拠",
+        "hashtags": 3,
+        "target_chars": 150,
+        "structure": (
+            "1行目でフックを置き、続けてその根拠を具体的に述べ、最後にハッシュタグ。\n"
+            "根拠は切り口を軸に据えて、1つか2つに絞る。"
+        ),
+    },
+    {
+        "key": "question",
+        "label": "問いかけ→答え",
+        "hashtags": 2,
+        "target_chars": 130,
+        "structure": (
+            "1行目を読み手への問いかけにして、次の行からその答えを返す。\n"
+            "問いは「〜ありませんか？」のような、読み手が自分ごとにできるものにする。\n"
+            "答えは長く説明せず、2〜3行で言い切る。"
+        ),
+    },
+    {
+        "key": "scene",
+        "label": "場面のスケッチ",
+        "hashtags": 2,
+        "target_chars": 140,
+        "structure": (
+            "使っている場面を短い行で重ねて描く。説明ではなく情景で見せる。\n"
+            "1行を短く保ち、改行を多めに入れてリズムを作る。\n"
+            "最後の1〜2行だけ、その場面が成り立つ理由に触れる。"
+        ),
+    },
+    {
+        "key": "bullet",
+        "label": "箇条書き",
+        "hashtags": 3,
+        "target_chars": 160,
+        "structure": (
+            "1行目にフックを置き、そのあと「・」で始まる短い箇条書きを3つ並べる。\n"
+            "各項目は20字前後。長い文を箇条書きの形に切っただけにしない。\n"
+            "箇条書きのあとに一言添えてからハッシュタグ。"
+        ),
+    },
+    {
+        "key": "oneline",
+        "label": "短文で言い切る",
+        "hashtags": 1,
+        "target_chars": 80,
+        "structure": (
+            "全体を2〜3行に収める。説明を足さず、一番効く一点だけを言い切る。\n"
+            "根拠を並べたくなっても書かない。短さそのものが目を引く型。\n"
+            "ハッシュタグは1個だけ。"
+        ),
+    },
+    {
+        "key": "honest",
+        "label": "本音から入る",
+        "hashtags": 2,
+        "target_chars": 150,
+        "structure": (
+            "「正直なところ」「最初は迷ったんですが」のように、留保や本音から入る。\n"
+            "そのうえで、それでも良いと言える理由に着地させる。\n"
+            "商品情報に訳あり・規格外などの条件があれば、この型ではそこに正面から触れる。"
+        ),
+    },
+]
+
+
+def _recent_keys(history: Iterable[dict[str, Any]], key: str, days: int, today: date) -> set[str]:
+    """直近 days 日で使った切り口／型。使い回しを後回しにするために見る。"""
+    cutoff = today - timedelta(days=days)
+    used: set[str] = set()
+    for record in history or []:
+        try:
+            presented = date.fromisoformat(str(record.get("presentedAt", "")))
+        except ValueError:
+            continue
+        if presented < cutoff:
+            continue
+        value = record.get(key)
+        if value:
+            used.add(str(value))
+    return used
+
+
+def _rotate(options: list[Any], recent: set[str], count: int, rng: random.Random, key: str) -> list[Any]:
+    """直近で使ったものを後回しにしつつ、重複なく count 個を選ぶ。
+
+    options を使い切る場合だけ先頭から回り込む（1日の件数が選択肢より多いとき）。
+    """
+    fresh = [o for o in options if str(o if isinstance(o, str) else o[key]) not in recent]
+    stale = [o for o in options if str(o if isinstance(o, str) else o[key]) in recent]
+    rng.shuffle(fresh)
+    rng.shuffle(stale)
+    ordered = fresh + stale
+    return [ordered[i % len(ordered)] for i in range(count)]
+
+
+def plan_variations(
+    count: int,
+    *,
+    allow_deal_info: bool = False,
+    history: Iterable[dict[str, Any]] | None = None,
+    day: date | None = None,
+    window_days: int = 14,
+) -> list[tuple[str, dict[str, Any]]]:
+    """その日の (切り口, 型) の組み合わせを決める。
+
+    以前は順位で切り口を決めていたため、3番目が毎日「贈り物」枠になり、
+    末尾の切り口は一度も使われなかった。日付を種にして振り直すことで、
+    同じ商品が何番目に来ても違う型で紹介される。
+
+    日付を種にしているので、同じ日に再実行すれば同じ組み合わせが出る。
+    """
+    day = day or date.today()
+    history = list(history or [])
+    angles = ANGLES + [DEAL_ANGLE] if allow_deal_info else list(ANGLES)
+
+    rng = random.Random(day.toordinal())
+    chosen_angles = _rotate(
+        angles, _recent_keys(history, "angle", window_days, day), count, rng, ""
+    )
+    chosen_formats = _rotate(
+        FORMATS, _recent_keys(history, "format", window_days, day), count, rng, "key"
+    )
+    return list(zip(chosen_angles, chosen_formats))
+
 # 価格は「1万円未満/1万円台/…」のような粒度でも本文に漏れると陳腐化するため、
 # モデルには数値を一切渡さず、質感だけを伝える。
 PRICE_BANDS: list[tuple[int, str]] = [
@@ -342,6 +495,7 @@ def build_prompt(
     angle: str,
     allow_deal_info: bool = False,
     today: date | None = None,
+    fmt: dict[str, Any] | None = None,
 ) -> str:
     # 期間外・期間不明のセールは、書かれたら嘘になるのでモデルに見せない。
     # 「9/1〜9/13のクーポン」を8月に紹介する、といった事故を入口で防ぐ。
@@ -366,7 +520,15 @@ def build_prompt(
         "商品説明": clean((item.get("itemCaption") or "")[:400]),
     }
     lines = [f"- {k}: {v}" for k, v in facts.items() if v not in (None, "")]
-    return "商品情報:\n" + "\n".join(lines) + f"\n\n指定された切り口: {angle}"
+    prompt = "商品情報:\n" + "\n".join(lines) + f"\n\n指定された切り口: {angle}"
+
+    fmt = fmt or FORMATS[0]
+    prompt += (
+        f"\n\n指定された型: {fmt['label']}\n"
+        f"{fmt['structure']}\n"
+        f"ハッシュタグは{fmt['hashtags']}個まで。全体は{fmt['target_chars']}字前後を目安にする。"
+    )
+    return prompt
 
 
 def _client():
@@ -412,6 +574,8 @@ def generate(
     settings: dict[str, Any],
     *,
     dry_run: bool = False,
+    history: Iterable[dict[str, Any]] | None = None,
+    day: date | None = None,
 ) -> list[dict[str, Any]]:
     """各商品に `_pitch` を付与する。1件の失敗で全体を落とさない。"""
     llm_cfg = settings.get("llm", {})
@@ -422,14 +586,20 @@ def generate(
         deal_rule=DEAL_RULE_ALLOWED if allow_deals else DEAL_RULE_STRICT,
     )
     genres = settings["genres"]
-    angles = ANGLES + [DEAL_ANGLE] if allow_deals else ANGLES
+    variations = plan_variations(
+        len(items),
+        allow_deal_info=allow_deals,
+        history=history,
+        day=day,
+        window_days=int(llm_cfg.get("variation_window_days", 14)),
+    )
 
     client = None if dry_run else _client()
 
     for index, item in enumerate(items):
         genre_label = genres.get(item.get("_genre_key"), {}).get("label", "")
-        angle = angles[index % len(angles)]
-        prompt = build_prompt(item, genre_label, angle, allow_deals)
+        angle, fmt = variations[index]
+        prompt = build_prompt(item, genre_label, angle, allow_deals, today=day, fmt=fmt)
         # build_prompt が期間を見て落としている場合があるので、実際の可否を使う
         item_allows_deals = allow_deals and item.get("_deal_status", "active") == "active"
         # 実績表現の裏づけ元。商品名・キャッチ・説明のどこかに書かれていればよい。
@@ -438,6 +608,7 @@ def generate(
             for key in ("itemName", "catchcopy", "itemCaption")
         )
         item["_angle"] = angle
+        item["_format"] = fmt["key"]
 
         if dry_run:
             print("=" * 70)
@@ -456,7 +627,11 @@ def generate(
 
             # 制約違反は一度だけ指摘して直させる。2回目も駄目なら初回の文を残す。
             problems = (
-                review_pitch(text, max_chars, item_allows_deals, source) if text else []
+                review_pitch(
+                    text, max_chars, item_allows_deals, source, fmt["hashtags"]
+                )
+                if text
+                else []
             )
             if problems:
                 name = str(item.get("itemName", ""))[:24]
@@ -474,7 +649,9 @@ def generate(
                 ]
                 retried = _ask(client, system, messages, llm_cfg)
                 remaining = (
-                    review_pitch(retried, max_chars, item_allows_deals, source)
+                    review_pitch(
+                        retried, max_chars, item_allows_deals, source, fmt["hashtags"]
+                    )
                     if retried
                     else problems
                 )

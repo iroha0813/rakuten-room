@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import pytest
 
 from room import write
@@ -181,7 +183,7 @@ class TestReviewPitch:
 
 class TestGenerate:
     def test_accepts_clean_output_without_retry(self, monkeypatch):
-        client = FakeClient(["毎日のごはんを楽にしたい人へ😊 無洗米は洗う手間が消えます🍚"])
+        client = FakeClient(["毎日のごはんを楽にしたい人へ😊 無洗米は洗う手間が消えます🍚\n#時短"])
         monkeypatch.setattr(write, "_client", lambda: client)
         items = [make_item()]
         write.generate(items, SETTINGS)
@@ -367,7 +369,7 @@ class TestDealInfo:
         assert "でっち上げてはいけない" in allowed
 
     def test_generate_accepts_a_coupon_hook(self, monkeypatch):
-        client = FakeClient(["クーポンありでお得に試せます😊\n本文です✨"])
+        client = FakeClient(["クーポンありでお得に試せます😊\n本文です✨\n#時短"])
         monkeypatch.setattr(write, "_client", lambda: client)
         items = [make_item()]
         write.generate(items, DEAL_SETTINGS)
@@ -419,3 +421,120 @@ class TestStylePrompt:
         assert "絵文字を2〜5個使う" in system
         # 装飾を誇張の道具にさせない一文が残っていること
         assert "装飾は温度であって内容ではありません" in system
+
+
+class TestVariationPlan:
+    """切り口と型が順位で固定されず、日ごとに振り直されること。"""
+
+    def test_no_repeat_within_a_day(self):
+        plan = write.plan_variations(5, day=date(2026, 9, 1))
+        angles = [angle for angle, _ in plan]
+        formats = [fmt["key"] for _, fmt in plan]
+        assert len(set(angles)) == 5
+        assert len(set(formats)) == 5
+
+    def test_same_day_is_reproducible(self):
+        first = write.plan_variations(5, day=date(2026, 9, 1))
+        second = write.plan_variations(5, day=date(2026, 9, 1))
+        assert first == second
+
+    def test_different_days_differ(self):
+        """順位で決めていた頃は毎日まったく同じ並びだった。"""
+        days = [date(2026, 9, d) for d in range(1, 8)]
+        orders = {tuple(a for a, _ in write.plan_variations(5, day=d)) for d in days}
+        assert len(orders) > 1
+
+    def test_third_slot_is_not_always_the_gift_angle(self):
+        """3番目が毎日「贈り物」枠になり、スポンジやノートPCが贈答品にされていた。"""
+        third = {write.plan_variations(5, day=date(2026, 9, d))[2][0] for d in range(1, 15)}
+        assert len(third) > 1
+
+    def test_every_angle_gets_used_eventually(self):
+        """以前は末尾の切り口とお得情報の切り口が一度も使われなかった。"""
+        used = set()
+        for offset in range(30):
+            plan = write.plan_variations(
+                5, allow_deal_info=True, day=date(2026, 9, 1) + timedelta(days=offset)
+            )
+            used.update(angle for angle, _ in plan)
+        assert used == set(write.ANGLES + [write.DEAL_ANGLE])
+
+    def test_deal_angle_excluded_when_deals_are_off(self):
+        for offset in range(30):
+            plan = write.plan_variations(5, day=date(2026, 9, 1) + timedelta(days=offset))
+            assert all(angle != write.DEAL_ANGLE for angle, _ in plan)
+
+    def test_recently_used_formats_go_last(self):
+        day = date(2026, 9, 10)
+        recent = [
+            {"presentedAt": (day - timedelta(days=1)).isoformat(), "format": key}
+            for key in ("hook_reason", "question", "scene")
+        ]
+        plan = write.plan_variations(3, history=recent, day=day)
+        assert {fmt["key"] for _, fmt in plan}.isdisjoint({"hook_reason", "question", "scene"})
+
+    def test_stale_history_is_ignored(self):
+        day = date(2026, 9, 10)
+        old = [
+            {"presentedAt": (day - timedelta(days=99)).isoformat(), "format": key}
+            for key in ("hook_reason", "question", "scene")
+        ]
+        assert write.plan_variations(3, history=old, day=day) == write.plan_variations(
+            3, day=day
+        )
+
+    def test_more_items_than_formats_wraps_instead_of_failing(self):
+        plan = write.plan_variations(9, day=date(2026, 9, 1))
+        assert len(plan) == 9
+
+
+class TestFormatPrompt:
+    def test_prompt_carries_the_assigned_format(self):
+        fmt = next(f for f in write.FORMATS if f["key"] == "oneline")
+        prompt = write.build_prompt(make_item(), "食品", "定番の理由", fmt=fmt)
+        assert "短文で言い切る" in prompt
+        assert "ハッシュタグは1個まで" in prompt
+
+    def test_falls_back_to_the_default_format(self):
+        prompt = write.build_prompt(make_item(), "食品", "定番の理由")
+        assert "指定された型" in prompt
+
+    def test_structure_lives_in_the_prompt_not_the_system(self):
+        """型ごとに変わる部分がシステムプロンプトに残っていないこと。"""
+        system = write.SYSTEM_PROMPT.format(
+            max_chars=250, deal_rule=write.DEAL_RULE_STRICT
+        )
+        assert "ハッシュタグを最大3個" not in system
+
+
+class TestHashtagCount:
+    def test_counts_both_ascii_and_fullwidth(self):
+        assert write.count_hashtags("本文\n#時短 ＃キッチン") == 2
+
+    def test_flags_too_many_for_the_format(self):
+        text = "毎日が楽になります😊\n定番です✨\n#時短 #キッチン #便利"
+        problems = write.review_pitch(text, 250, hashtags=1)
+        assert any("ハッシュタグが3個" in p for p in problems)
+
+    def test_accepts_within_the_format_limit(self):
+        text = "毎日が楽になります😊\n定番です✨\n#時短"
+        assert write.review_pitch(text, 250, hashtags=1) == []
+
+    def test_flags_missing_hashtags(self):
+        text = "毎日が楽になります😊\n定番です✨"
+        problems = write.review_pitch(text, 250, hashtags=2)
+        assert any("ハッシュタグがありません" in p for p in problems)
+
+    def test_unchecked_when_no_format_limit_given(self):
+        text = "毎日が楽になります😊\n定番です✨"
+        assert write.review_pitch(text, 250) == []
+
+
+class TestVariationIsRecorded:
+    def test_generate_tags_each_item(self, monkeypatch):
+        client = FakeClient(["毎日の洗濯が楽になります😊\n定番です✨\n#時短"] * 2)
+        monkeypatch.setattr(write, "_client", lambda: client)
+        items = [make_item(), make_item(itemName="別の商品")]
+        write.generate(items, SETTINGS, day=date(2026, 9, 1))
+        assert all(item["_angle"] and item["_format"] for item in items)
+        assert items[0]["_format"] != items[1]["_format"]

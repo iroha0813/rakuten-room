@@ -56,7 +56,7 @@ def run(
 
     print("\n== プレゼン文生成 ==")
     if use_llm and chosen:
-        write.generate(chosen, settings)
+        write.generate(chosen, settings, history=history, day=day)
         generated = sum(1 for item in chosen if item.get("_pitch"))
         print(f"生成: {generated} / {len(chosen)} 件")
     else:

@@ -100,6 +100,9 @@ def append_presented(items: Iterable[dict[str, Any]], path: Path | None = None) 
                 "reviewCount": item.get("reviewCount"),
                 "reviewAverage": item.get("reviewAverage"),
                 "rank": item.get("_rank"),
+                # 切り口と型。翌日以降、直近で使ったものを後回しにするために見る。
+                "angle": item.get("_angle"),
+                "format": item.get("_format"),
                 "score": round(float(item.get("_score", 0.0)), 4),
                 "presentedAt": today,
             }
