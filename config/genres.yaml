@@ -10,12 +10,15 @@ daily_goods:
 gadget:
   label: ガジェット・PC周辺
   genre_ids:
-  - id: '100026'
-    name: パソコン・周辺機器
   - id: '564500'
     name: スマートフォン・タブレット
   - id: '211742'
     name: TV・オーディオ・カメラ
+storage:
+  label: インテリア・寝具・収納
+  genre_ids:
+  - id: '100804'
+    name: インテリア・寝具・収納
 food:
   label: 食品・飲料・ふるさと納税
   genre_ids:

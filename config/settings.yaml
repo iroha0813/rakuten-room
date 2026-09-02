@@ -23,13 +23,21 @@ genres:
       - キッチン用品
   gadget:
     label: ガジェット・PC周辺
-    share: 2
+    share: 1
     price_min: 2000
     price_max: 30000
     match:
-      - パソコン・周辺機器
       - スマートフォン
       - TV・オーディオ・カメラ
+    # ノートPC本体(新品/中古とも)は投稿してもいいねが0件続きだったため
+    # 「パソコン・周辺機器」ジャンルはmatchから除外した。2026-09-02判断。
+  storage:
+    label: インテリア・寝具・収納
+    share: 2
+    price_min: 1000
+    price_max: 8000
+    match:
+      - インテリア・寝具・収納
   food:
     label: 食品・飲料・ふるさと納税
     share: 1
