@@ -2,7 +2,9 @@
 # ここを書き換えれば挙動が変わる。コードには定数を埋め込まない方針。
 
 # 1日に生成する投稿候補の件数
-daily_count: 5
+# 【スーパーSALE対応・一時変更】5→10。2026-09-04〜09-11の期間限定。
+# サール終了後は5に戻すこと（元の値はjournal/2026-09-03.mdに記録）。
+daily_count: 10
 
 # 候補プールを daily_count の何倍集めるか（絞り込みの余地を作る）
 candidate_pool_multiplier: 5
@@ -15,7 +17,9 @@ candidate_pool_multiplier: 5
 genres:
   daily_goods:
     label: 日用品・キッチン雑貨
-    share: 2
+    # 【スーパーSALE対応・一時変更】share 2→3。買いまわり対象になりやすく
+    # 9/2実測でも反応が良かったジャンルのため厚くする。09-11後に2へ戻す。
+    share: 3
     price_min: 1000
     price_max: 8000
     match:
@@ -31,16 +35,20 @@ genres:
       - TV・オーディオ・カメラ
     # ノートPC本体(新品/中古とも)は投稿してもいいねが0件続きだったため
     # 「パソコン・周辺機器」ジャンルはmatchから除外した。2026-09-02判断。
+    # スーパーSALE期間もshareは1のまま据え置き（買いまわり向きではないため増やさない）。
   storage:
     label: インテリア・寝具・収納
-    share: 2
+    # 【スーパーSALE対応・一時変更】share 2→3。理由はdaily_goodsと同じ。09-11後に2へ戻す。
+    share: 3
     price_min: 1000
     price_max: 8000
     match:
       - インテリア・寝具・収納
   food:
     label: 食品・飲料・ふるさと納税
-    share: 1
+    # 【スーパーSALE対応・一時変更】share 1→2。消耗品で買いまわりの点数稼ぎに使われやすい。
+    # 09-11後に1へ戻す。
+    share: 2
     price_min: 2000
     price_max: 15000
     match:
