@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import config
+from . import config, score
 
 POSTED_PATH = config.DATA_DIR / "posted.jsonl"
 CANDIDATES_DIR = config.DATA_DIR / "candidates"
@@ -77,6 +77,31 @@ def recent_shop_counts(
         shop = record.get("shopCode")
         if shop:
             counts[shop] += 1
+    return counts
+
+
+def recent_type_counts(
+    history: Iterable[dict[str, Any]],
+    categories: dict[str, list[str]],
+    days: int,
+    today: date | None = None,
+) -> Counter[str]:
+    """直近 days 日で各商品タイプ（product_type参照）が何回出たか。
+
+    同じような商品（マットレスばかり等）が繰り返し出るのを防ぐ減点に使う。
+    """
+    counts: Counter[str] = Counter()
+    if not categories:
+        return counts
+    today = today or date.today()
+    cutoff = today - timedelta(days=days)
+    for record in history:
+        presented = _parse_date(record.get("presentedAt", ""))
+        if presented is None or presented < cutoff:
+            continue
+        item_type = score.categorize(record.get("itemName") or "", categories)
+        if item_type:
+            counts[item_type] += 1
     return counts
 
 

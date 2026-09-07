@@ -58,6 +58,35 @@ class TestRecentShopCounts:
         assert counts["b"] == 1
 
 
+class TestRecentTypeCounts:
+    CATEGORIES = {"mattress": ["マットレス"], "pillow": ["枕"]}
+
+    def test_counts_only_within_window(self):
+        records = [
+            {"itemName": "高反発マットレス", "presentedAt": "2026-09-06"},
+            {"itemName": "三つ折りマットレス", "presentedAt": "2026-09-03"},
+            {"itemName": "低反発枕", "presentedAt": "2026-09-05"},
+            {"itemName": "去年のマットレス", "presentedAt": "2025-01-01"},
+        ]
+        counts = store.recent_type_counts(
+            records, self.CATEGORIES, days=14, today=date(2026, 9, 7)
+        )
+        assert counts["mattress"] == 2
+        assert counts["pillow"] == 1
+
+    def test_unmatched_item_name_is_ignored(self):
+        records = [{"itemName": "全く関係ない商品", "presentedAt": "2026-09-06"}]
+        counts = store.recent_type_counts(
+            records, self.CATEGORIES, days=14, today=date(2026, 9, 7)
+        )
+        assert counts == {}
+
+    def test_empty_categories_is_empty(self):
+        records = [{"itemName": "マットレス", "presentedAt": "2026-09-06"}]
+        counts = store.recent_type_counts(records, {}, days=14, today=date(2026, 9, 7))
+        assert counts == {}
+
+
 class TestAppendPresented:
     def test_writes_expected_fields(self, tmp_path):
         path = tmp_path / "posted.jsonl"

@@ -36,6 +36,19 @@ def rank_bonus(rank: int | None) -> float:
     return max(0.0, (RANK_BONUS_FLOOR + 1 - rank) / RANK_BONUS_FLOOR)
 
 
+def categorize(item_name: str, categories: dict[str, list[str]]) -> str | None:
+    """商品名からキーワードで大まかな商品タイプを判定する。
+
+    categories の記載順で最初に一致したキーワードのタイプを採用する。
+    どれにも一致しなければ None（多様性ペナルティの対象外）。
+    """
+    for type_key, keywords in categories.items():
+        for keyword in keywords:
+            if keyword in item_name:
+                return type_key
+    return None
+
+
 def score_item(
     item: dict[str, Any],
     *,
@@ -44,11 +57,13 @@ def score_item(
     price_max: int,
     commission_rate: float,
     shop_counts: Counter[str],
+    type_counts: Counter[str] | None = None,
 ) -> float:
     review_count = int(item.get("reviewCount") or 0)
     review_average = float(item.get("reviewAverage") or 0.0)
     price = int(item.get("itemPrice") or 0)
     shop_code = item.get("shopCode") or ""
+    item_type = item.get("_product_type")
 
     return (
         weights.get("review_count", 0.0) * math.log10(review_count + 1)
@@ -57,6 +72,7 @@ def score_item(
         + weights.get("price_fit", 0.0) * price_fit(price, price_min, price_max)
         + weights.get("commission", 0.0) * math.log10(price * commission_rate + 1)
         - weights.get("shop_repeat", 0.0) * shop_counts.get(shop_code, 0)
+        - weights.get("type_repeat", 0.0) * ((type_counts or {}).get(item_type, 0) if item_type else 0)
     )
 
 
@@ -114,6 +130,7 @@ def select(
     weights: dict[str, float],
     excluded_codes: set[str],
     shop_counts: Counter[str],
+    type_counts: Counter[str] | None = None,
 ) -> list[dict[str, Any]]:
     """候補プールから当日分を選ぶ。
 
@@ -123,8 +140,10 @@ def select(
     collect_cfg = settings.get("collect", {})
     selection_cfg = settings.get("selection", {})
     sale_boost = settings.get("sale_boost", {}) or {}
+    product_type_categories = (settings.get("product_type", {}) or {}).get("categories", {}) or {}
     commission_rate = float(settings.get("affiliate", {}).get("commission_rate", 0.02))
     max_per_shop = int(selection_cfg.get("max_per_shop", 1))
+    max_per_type = int(selection_cfg.get("max_per_type", 0))
     daily_count = int(settings.get("daily_count", 5))
 
     # ジャンルごとに適格判定とスコアリング
@@ -152,6 +171,7 @@ def select(
         ):
             continue
 
+        item["_product_type"] = categorize(item.get("itemName") or "", product_type_categories)
         item["_score"] = score_item(
             item,
             weights=weights,
@@ -159,6 +179,7 @@ def select(
             price_max=price_max,
             commission_rate=commission_rate,
             shop_counts=shop_counts,
+            type_counts=type_counts,
         )
         if sale_boost.get("enabled") and sale_boost.get("genre_key") == genre_key:
             item["_score"] *= float(sale_boost.get("multiplier", 1.0))
@@ -170,6 +191,7 @@ def select(
     quota = _allocate(daily_count, genres)
     chosen: list[dict[str, Any]] = []
     used_shops: Counter[str] = Counter()
+    used_types: Counter[str] = Counter()
 
     def take(pool: list[dict[str, Any]], limit: int) -> None:
         for item in pool:
@@ -180,8 +202,13 @@ def select(
             shop = item.get("shopCode") or ""
             if used_shops[shop] >= max_per_shop:
                 continue
+            item_type = item.get("_product_type")
+            if max_per_type > 0 and item_type and used_types[item_type] >= max_per_type:
+                continue
             chosen.append(item)
             used_shops[shop] += 1
+            if item_type:
+                used_types[item_type] += 1
             limit -= 1
 
     for genre_key, limit in quota.items():

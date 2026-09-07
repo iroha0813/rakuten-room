@@ -37,12 +37,17 @@ def run(
     print("\n== 選定 ==")
     history = store.load_history()
     ttl = int(settings.get("selection", {}).get("history_ttl_days", 180))
+    product_type_cfg = settings.get("product_type", {}) or {}
+    type_window_days = int(product_type_cfg.get("window_days", 14))
     chosen = score.select(
         pool,
         settings=settings,
         weights=weights,
         excluded_codes=store.presented_item_codes(history, ttl, today=day),
         shop_counts=store.recent_shop_counts(history, today=day),
+        type_counts=store.recent_type_counts(
+            history, product_type_cfg.get("categories", {}), type_window_days, today=day
+        ),
     )
     print(f"選定: {len(chosen)} / {settings.get('daily_count')} 件")
     for item in chosen:

@@ -44,6 +44,7 @@ WEIGHTS = {
     "price_fit": 0.6,
     "commission": 0.9,
     "shop_repeat": 1.5,
+    "type_repeat": 1.2,
 }
 
 
@@ -76,6 +77,28 @@ class TestRankBonus:
 
     def test_beyond_floor_is_zero(self):
         assert score.rank_bonus(200) == 0.0
+
+
+class TestCategorize:
+    CATEGORIES = {
+        "dish_rack": ["水切りラック", "水切り"],
+        "rack": ["ラック"],
+        "mattress": ["マットレス"],
+    }
+
+    def test_matches_keyword(self):
+        assert score.categorize("高反発マットレス 三つ折り", self.CATEGORIES) == "mattress"
+
+    def test_no_match_is_none(self):
+        assert score.categorize("全く関係ない商品名", self.CATEGORIES) is None
+
+    def test_first_matching_category_wins(self):
+        # "水切りラック"は dish_rack にも rack にも部分一致するが、
+        # categories の記載順（dish_rackが先）を優先する
+        assert score.categorize("水切りラック シンク上", self.CATEGORIES) == "dish_rack"
+
+    def test_empty_categories_is_none(self):
+        assert score.categorize("マットレス", {}) is None
 
 
 class TestEligibility:
@@ -161,6 +184,49 @@ class TestScoreItem:
             shop_counts=Counter({"shop": 3}),
         )
         assert repeated < clean
+
+    def test_recent_type_is_penalized(self):
+        clean = score.score_item(
+            make_item(_product_type="mattress"),
+            weights=WEIGHTS,
+            price_min=1000,
+            price_max=8000,
+            commission_rate=0.02,
+            shop_counts=Counter(),
+            type_counts=Counter(),
+        )
+        repeated = score.score_item(
+            make_item(_product_type="mattress"),
+            weights=WEIGHTS,
+            price_min=1000,
+            price_max=8000,
+            commission_rate=0.02,
+            shop_counts=Counter(),
+            type_counts=Counter({"mattress": 2}),
+        )
+        assert repeated < clean
+
+    def test_untyped_item_is_not_penalized(self):
+        # _product_type が None（分類対象外）なら type_counts があっても影響しない
+        result = score.score_item(
+            make_item(_product_type=None),
+            weights=WEIGHTS,
+            price_min=1000,
+            price_max=8000,
+            commission_rate=0.02,
+            shop_counts=Counter(),
+            type_counts=Counter({"mattress": 99}),
+        )
+        baseline = score.score_item(
+            make_item(_product_type=None),
+            weights=WEIGHTS,
+            price_min=1000,
+            price_max=8000,
+            commission_rate=0.02,
+            shop_counts=Counter(),
+            type_counts=Counter(),
+        )
+        assert result == baseline
 
 
 class TestAllocate:
@@ -254,6 +320,56 @@ class TestSelect:
         )
         scores = [item["_score"] for item in chosen]
         assert scores == sorted(scores, reverse=True)
+
+    def test_respects_max_per_type(self):
+        pool = [
+            make_item(
+                itemCode=f"shop{i}:item{i}",
+                shopCode=f"shop{i}",
+                itemName="高反発マットレス 三つ折り",
+                reviewCount=100 * (i + 1),
+            )
+            for i in range(5)
+        ]
+        settings = {
+            **SETTINGS,
+            "selection": {"max_per_shop": 1, "max_per_type": 1},
+            "product_type": {"categories": {"mattress": ["マットレス"]}},
+        }
+        chosen = score.select(
+            pool,
+            settings=settings,
+            weights=WEIGHTS,
+            excluded_codes=set(),
+            shop_counts=Counter(),
+        )
+        assert len(chosen) == 1
+
+    def test_type_repeat_penalizes_across_days(self):
+        # 過去に何度も出たタイプは、同じスコアなら後回しになる
+        pool = [
+            make_item(
+                itemCode="a:1", shopCode="a", itemName="高反発マットレス", reviewCount=500
+            ),
+            make_item(
+                itemCode="b:1", shopCode="b", itemName="よく眠れる枕", reviewCount=500
+            ),
+        ]
+        settings = {
+            **SETTINGS,
+            "daily_count": 1,
+            "selection": {"max_per_shop": 1, "max_per_type": 1},
+            "product_type": {"categories": {"mattress": ["マットレス"], "pillow": ["枕"]}},
+        }
+        chosen = score.select(
+            pool,
+            settings=settings,
+            weights=WEIGHTS,
+            excluded_codes=set(),
+            shop_counts=Counter(),
+            type_counts=Counter({"mattress": 5}),
+        )
+        assert chosen[0]["itemCode"] == "b:1"
 
     def test_sale_boost_applies_to_target_genre(self):
         settings = {**SETTINGS, "sale_boost": {"enabled": True, "genre_key": "gadget", "multiplier": 5.0}}
