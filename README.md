@@ -129,6 +129,9 @@ ANTHROPIC_API_KEY=sk-ant-....
 - `collect.min_review_average` / `min_review_count` — 候補が少なすぎるときに緩める
 - `sale_boost` — お買い物マラソン期間に特定ジャンルを厚くする
 - `llm.model` — `claude-opus-5` にすれば文章の質は上がる（コストも上がる）
+- `product_type.categories` — 「マットレスばかり出る」のように同じ商品タイプが
+  繰り返し投稿されているのに気づいたら、キーワードを追記する（`selection.max_per_type`
+  で同日内の上限、`weights.yaml` の `type_repeat` で直近日数の減点が効く）
 
 ## データ
 
