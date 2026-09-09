@@ -133,6 +133,23 @@ ANTHROPIC_API_KEY=sk-ant-....
   繰り返し投稿されているのに気づいたら、キーワードを追記する（`selection.max_per_type`
   で同日内の上限、`weights.yaml` の `type_repeat` で直近日数の減点が効く）
 
+## 毎日の自動実行
+
+Oracle Cloud の無料枠VPS（`rakuten-room-vps`、固定IP）上で cron が毎朝07:00 JSTに
+`scripts/run_daily.sh` を実行し、候補生成からGitHubへのpushまで自動で行う。
+
+以前はローカルPC + Windowsタスクスケジューラ（`run_daily.ps1`）で運用していたが、
+家庭用回線のIPが変動して楽天APIの許可IPから頻繁に外れる問題（403 CLIENT_IP_NOT_ALLOWED）が
+続いたため、固定IPを持つVPSでの実行に移行した（2026-09-09）。ローカルでの手動実行コマンド
+（下記「使い方」）は引き続き使える。
+
+VPS側のセットアップ内容:
+
+- Python 3.9（Oracle Linux 9標準）+ venv、依存パッケージは`requirements.txt`と同じ
+- `.env` はローカルからscpで転送（内容は本番と同一）
+- GitHubへのpushは Deploy Key（read/write）+ SSH経由。パスワード認証や個人PATは使わない
+- cronは `crontab -l` で確認できる。ログは `local/logs/cron.log` と日付別ログの両方に出る
+
 ## データ
 
 | パス | 内容 |
