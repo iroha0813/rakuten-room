@@ -30,6 +30,16 @@ if [ ! -x "$PYTHON" ]; then
     exit 1
 fi
 
+# --- リポジトリを最新化 -------------------------------------------------------
+# ローカルPC側でjournal/READMEをpushした直後にcronが動くと、生成コミットが
+# 古い状態の上に積まれてpushが「fetch first」で失敗する（2026-09-10, 09-11で発生）。
+# 生成前にrebaseしておくことで、この衝突を未然に防ぐ。
+log "リポジトリを最新化します..."
+if ! GIT_SSH_COMMAND="ssh -i $HOME/.ssh/github_deploy_key -o IdentitiesOnly=yes" git pull --rebase -q origin main; then
+    log "ERROR: git pull に失敗しました。手動でリポジトリの状態を確認してください。"
+    exit 1
+fi
+
 # --- 候補生成 ---------------------------------------------------------------
 log "候補を生成します..."
 "$PYTHON" -m room.pipeline 2>&1 | tee -a "$LOG_FILE"
