@@ -5,6 +5,7 @@ score = w_review_count * log10(reviewCount + 1)
       + w_rank         * ランキング掲載ボーナス
       + w_price_fit    * 価格帯適合度
       + w_commission   * log10(想定報酬 + 1)
+      + w_repeat_bonus * リピート購入品フラグ（0 or 1）
       - w_shop_repeat  * 直近の同一ショップ出現回数
 """
 
@@ -71,6 +72,7 @@ def score_item(
         + weights.get("rank", 0.0) * rank_bonus(item.get("_rank"))
         + weights.get("price_fit", 0.0) * price_fit(price, price_min, price_max)
         + weights.get("commission", 0.0) * math.log10(price * commission_rate + 1)
+        + weights.get("repeat_bonus", 0.0) * (1.0 if item.get("_repeat_type") else 0.0)
         - weights.get("shop_repeat", 0.0) * shop_counts.get(shop_code, 0)
         - weights.get("type_repeat", 0.0) * ((type_counts or {}).get(item_type, 0) if item_type else 0)
     )
@@ -141,6 +143,7 @@ def select(
     selection_cfg = settings.get("selection", {})
     sale_boost = settings.get("sale_boost", {}) or {}
     product_type_categories = (settings.get("product_type", {}) or {}).get("categories", {}) or {}
+    repeat_purchase_categories = (settings.get("repeat_purchase", {}) or {}).get("categories", {}) or {}
     commission_rate = float(settings.get("affiliate", {}).get("commission_rate", 0.02))
     max_per_shop = int(selection_cfg.get("max_per_shop", 1))
     max_per_type = int(selection_cfg.get("max_per_type", 0))
@@ -172,6 +175,7 @@ def select(
             continue
 
         item["_product_type"] = categorize(item.get("itemName") or "", product_type_categories)
+        item["_repeat_type"] = categorize(item.get("itemName") or "", repeat_purchase_categories)
         item["_score"] = score_item(
             item,
             weights=weights,

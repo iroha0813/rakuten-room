@@ -45,6 +45,7 @@ WEIGHTS = {
     "commission": 0.9,
     "shop_repeat": 1.5,
     "type_repeat": 1.2,
+    "repeat_bonus": 1.0,
 }
 
 
@@ -205,6 +206,25 @@ class TestScoreItem:
             type_counts=Counter({"mattress": 2}),
         )
         assert repeated < clean
+
+    def test_repeat_type_is_boosted(self):
+        clean = score.score_item(
+            make_item(_repeat_type=None),
+            weights=WEIGHTS,
+            price_min=1000,
+            price_max=8000,
+            commission_rate=0.02,
+            shop_counts=Counter(),
+        )
+        repeat = score.score_item(
+            make_item(_repeat_type="rice"),
+            weights=WEIGHTS,
+            price_min=1000,
+            price_max=8000,
+            commission_rate=0.02,
+            shop_counts=Counter(),
+        )
+        assert repeat > clean
 
     def test_untyped_item_is_not_penalized(self):
         # _product_type が None（分類対象外）なら type_counts があっても影響しない
