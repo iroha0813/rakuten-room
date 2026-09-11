@@ -493,7 +493,7 @@ class TestFormatPrompt:
         fmt = next(f for f in write.FORMATS if f["key"] == "oneline")
         prompt = write.build_prompt(make_item(), "食品", "定番の理由", fmt=fmt)
         assert "短文で言い切る" in prompt
-        assert "ハッシュタグは1個まで" in prompt
+        assert "ハッシュタグは5個まで" in prompt
 
     def test_falls_back_to_the_default_format(self):
         prompt = write.build_prompt(make_item(), "食品", "定番の理由")
